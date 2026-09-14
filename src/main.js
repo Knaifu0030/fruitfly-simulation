@@ -325,8 +325,7 @@ $("#timeline").addEventListener("click", (event) => {
 addEventListener("resize", drawBalanceChart);
 
 renderWallet(wallet);
-client.connect();
-client.getWallet().then(renderWallet).catch(() => {});
+client.getWallet().then(renderWallet).catch(() => {}).finally(() => client.connect());
 client.getExperiments().then((data) => renderExperiments(data.experiments)).catch(() => {
   $("#experiment-list").textContent = "Available when the simulation API is online.";
 });

@@ -42,7 +42,7 @@ MaleCNS soma positions are anatomical data. The displayed perception, working-st
 
 The Three.js table is an original visualization of the local provider, not a capture or automation of an external casino. It renders a six-deck shoe, discard tray, wager-sized chips, an articulated fly, player and dealer cards, splits, doubles, surrender, and dealer reveal. Rank is authoritative simulation state. Suit is visual-only and deterministically derived from the hand ID because suits do not affect blackjack strategy; this keeps every replay stable.
 
-The client maintains a single felt-state model. Immediate WebSocket events animate decisions and public cards, while the final `hand.result` is the canonical replay record. If the backend is unavailable, the UI clearly switches to a scripted demonstration that exercises the same event schema.
+The client maintains a single felt-state model. Immediate WebSocket events animate decisions and public cards, while the final `hand.result` is the canonical replay record. If the backend is unavailable or idle, the UI clearly switches to a scripted demonstration that exercises the same event schema. The demonstration never modifies or replaces the persisted wallet display, uses the configured wager, and omits surrender examples when late surrender is disabled.
 
 ## API
 

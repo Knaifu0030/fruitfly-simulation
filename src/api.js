@@ -56,6 +56,7 @@ export class LiveClient {
     this.onConnection = onConnection;
     this.paused = false;
     this.lastSequence = 0;
+    this.walletConfig = { base_wager_paise: 10_000, late_surrender: true };
     const configured = import.meta.env.VITE_API_URL;
     this.api = configured || `${location.protocol}//${location.hostname}:8000`;
   }
@@ -81,7 +82,9 @@ export class LiveClient {
   async getWallet() {
     const response = await fetch(`${this.api}/api/wallet`);
     if (!response.ok) throw new Error("Wallet unavailable");
-    return response.json();
+    const result = await response.json();
+    this.setWalletConfig(result);
+    return result;
   }
 
   async getExperiments() {
@@ -109,7 +112,9 @@ export class LiveClient {
       body: JSON.stringify({ direction, amount_paise: amountPaise, public_note: publicNote }),
     });
     if (!response.ok) throw new Error((await response.json()).detail ?? "Balance adjustment failed");
-    return response.json();
+    const result = await response.json();
+    this.setWalletConfig(result.wallet);
+    return result;
   }
 
   async configureWallet(baseWagerPaise, lateSurrender) {
@@ -119,7 +124,13 @@ export class LiveClient {
       body: JSON.stringify({ base_wager_paise: baseWagerPaise, late_surrender: lateSurrender }),
     });
     if (!response.ok) throw new Error((await response.json()).detail ?? "Settings update failed");
-    return response.json();
+    const result = await response.json();
+    this.setWalletConfig(result);
+    return result;
+  }
+
+  setWalletConfig(snapshot = {}) {
+    this.walletConfig = { ...this.walletConfig, ...snapshot };
   }
 
   openSocket() {
@@ -146,17 +157,17 @@ export class LiveClient {
    * surrender, splits, doubles and a natural, so the table is never idle.
    */
   startDemo() {
-    const wager = 10_000;
     let index = 0;
     let hands = 0;
     let dealt = 0;
-    let balance = 1_000_000;
-    let peak = balance;
-    let maxDrawdown = 0;
 
     const deal = () => {
       if (this.paused) return;
-      const example = DEMO_HANDS[index % DEMO_HANDS.length];
+      const examples = this.walletConfig.late_surrender
+        ? DEMO_HANDS
+        : DEMO_HANDS.filter((hand) => hand.action !== "surrender");
+      const example = examples[index % examples.length];
+      const wager = this.walletConfig.base_wager_paise ?? 10_000;
       index += 1;
       const handId = `demo-${index}`;
       const playerTotal = example.player.reduce((sum, card) => sum + card, 0);
@@ -194,9 +205,6 @@ export class LiveClient {
         hands += 1;
         dealt += example.finalHands.flat().length + example.dealerFinal.length - 4;
         const delta = Math.round(example.reward * wager);
-        balance += delta;
-        peak = Math.max(peak, balance);
-        maxDrawdown = Math.max(maxDrawdown, peak - balance);
 
         this.onEvent({ type: "hand.result", payload: {
           hand_id: handId,
@@ -209,10 +217,8 @@ export class LiveClient {
           total_reward: example.reward,
           decisions: decision ? [decision] : [],
           wager_paise: wager,
-          rules: { late_surrender: true },
+          rules: { late_surrender: this.walletConfig.late_surrender },
           virtual_inr_result_paise: delta,
-          balance_before_paise: balance - delta,
-          balance_after_paise: balance,
         } });
         this.onEvent({ type: "brain.frame", payload: {
           phase: "kc_mbon_update", pathway: [example.reward > 0 ? "appetitive" : "aversive", "learning", "choice"],
@@ -223,13 +229,6 @@ export class LiveClient {
           hands, wins: Math.ceil(hands * 0.44), losses: Math.floor(hands * 0.48),
           pushes: Math.floor(hands * 0.08), unit_return: -hands * 0.005,
           accuracy: Math.min(0.999, 0.91 + hands * 0.002),
-        } });
-        this.onEvent({ type: "wallet.snapshot", payload: {
-          currency: "INR_SIM", label: "simulated INR demonstration", balance_paise: balance,
-          available_paise: balance, reserved_paise: 0, base_wager_paise: wager,
-          max_exposure_paise: wager * 8, late_surrender: true,
-          realized_pnl_paise: balance - 1_000_000, roi: (balance - 1_000_000) / 1_000_000,
-          max_drawdown_paise: maxDrawdown, risk_of_ruin_heuristic: null,
         } });
       }, 2600);
     };
