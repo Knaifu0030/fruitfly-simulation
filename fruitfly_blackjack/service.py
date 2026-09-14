@@ -159,6 +159,7 @@ async def run_simulation(request: RunRequest) -> None:
                 decisions.append(decision)
                 for frame in brain.decision_frames(current, action):
                     await state.bus.publish("brain.frame", frame)
+                    await asyncio.sleep(0.055)
                 await state.bus.publish("agent.decision", decision)
                 current = provider.act(action)
                 for provider_event in provider.events[published_events:]:
@@ -169,6 +170,7 @@ async def run_simulation(request: RunRequest) -> None:
             agent.learn(result.total_reward)
             for frame in brain.reinforce(result.total_reward):
                 await state.bus.publish("brain.frame", frame)
+                await asyncio.sleep(0.055)
             update_counters(state.counters, result, decisions)
             hand_record = {
                 "hand_id": result.hand_id,

@@ -57,12 +57,21 @@ export class LiveClient {
       if (this.paused) return;
       const example = examples[hands % examples.length];
       this.onEvent({ type: "agent.decision", payload: { action: example.action, oracle_action: example.action, correct: true, rationale: example.rationale, observation: { player_cards: example.player, player_total: example.player.reduce((a, b) => a + b, 0), dealer_upcard: example.dealer } } });
-      this.onEvent({ type: "brain.frame", payload: { populations: demoPopulations(example.reward) } });
+      this.onEvent({ type: "brain.frame", payload: {
+        phase: "action_readout", pathway: ["perception", "working", "choice"],
+        stimulus: { player_cards: example.player, dealer_upcard: example.dealer, hand_total: example.player.reduce((a, b) => a + b, 0), action: example.action },
+        populations: demoPopulations(example.reward), plasticity: hands * 0.0004, plasticity_delta: 0,
+      } });
       setTimeout(() => {
         if (this.paused) return;
         hands += 1;
         const outcome = example.reward > 0 ? "win" : example.reward < -0.5 ? "loss" : "surrender";
         this.onEvent({ type: "hand.result", payload: { hand_id: `demo-${hands}`, dealer_cards: [example.dealer, 10], results: [{ player_cards: example.player, outcome, reward: example.reward, actions: [example.action] }], total_reward: example.reward, decisions: [{ action: example.action, oracle_action: example.action, correct: true, rationale: example.rationale }] } });
+        this.onEvent({ type: "brain.frame", payload: {
+          phase: "kc_mbon_update", pathway: [example.reward > 0 ? "appetitive" : "aversive", "learning", "choice"],
+          stimulus: { reward: example.reward, teaching_signal: example.reward > 0 ? "appetitive" : "aversive" },
+          populations: demoPopulations(example.reward), plasticity: hands * 0.0004, plasticity_delta: Math.abs(example.reward) * 0.0004,
+        } });
         this.onEvent({ type: "stats.updated", payload: { hands, wins: Math.ceil(hands * 0.44), losses: Math.floor(hands * 0.48), pushes: Math.floor(hands * 0.08), unit_return: -hands * 0.005, accuracy: Math.min(0.999, 0.91 + hands * 0.002) } });
       }, 1700);
     };

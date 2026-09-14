@@ -1,4 +1,5 @@
 from fruitfly_blackjack.agent import HybridAgent
+from fruitfly_blackjack.brain import BrainActivityModel
 from fruitfly_blackjack.models import Action, Hand, Observation
 from fruitfly_blackjack.oracle import optimal_action
 from fruitfly_blackjack.provider import LocalBlackjackProvider
@@ -91,3 +92,17 @@ def test_unaided_agent_matches_oracle_for_reachable_state_grid():
             checked += 1
     assert checked == 80
     assert agent.accuracy >= 0.995
+
+
+def test_brain_frames_expose_phases_evidence_and_plasticity():
+    model = BrainActivityModel()
+    item = observation([10, 6], 10)
+    decision = model.decision_frames(item, Action.SURRENDER)
+    assert [frame["phase"] for frame in decision] == [
+        "retina", "visual_encoding", "working_state", "action_readout", "decision_committed"
+    ]
+    assert all(frame["evidence_class"] == "simulated aggregate activity" for frame in decision)
+    reinforced = model.reinforce(-0.5)
+    assert reinforced[1]["stimulus"]["teaching_signal"] == "aversive"
+    assert reinforced[2]["phase"] == "kc_mbon_update"
+    assert reinforced[2]["plasticity_delta"] > 0

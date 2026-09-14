@@ -5,7 +5,7 @@ import { LiveClient } from "./api.js";
 
 const $ = (selector) => document.querySelector(selector);
 const stage = new BlackjackStage($("#stage-canvas"));
-const brain = new BrainView($("#brain-canvas"), $("#brain-labels"));
+const brain = new BrainView($("#brain-canvas"), $("#brain-labels"), $("#activity-plot"));
 const recent = [];
 let currentObservation = null;
 
@@ -70,7 +70,7 @@ function handleEvent(event) {
     $("#oracle-check").textContent = comparison;
     $("#oracle-check").classList.toggle("mistake", !payload.correct);
   }
-  if (event.type === "brain.frame") brain.update(payload.populations ?? []);
+  if (event.type === "brain.frame") brain.update(payload);
   if (event.type === "hand.result") {
     recent.unshift(payload);
     recent.splice(10);
@@ -100,6 +100,14 @@ $("#brain-info").addEventListener("click", (event) => {
   const panel = $("#technical-panel");
   panel.hidden = !panel.hidden;
   event.currentTarget.setAttribute("aria-expanded", String(!panel.hidden));
+});
+$("#brain-labels").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-population]");
+  if (button) {
+    brain.inspect(button.dataset.population);
+    $("#technical-panel").hidden = false;
+    $("#brain-info").setAttribute("aria-expanded", "true");
+  }
 });
 $("#timeline").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-index]");

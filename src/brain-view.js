@@ -10,9 +10,10 @@ const COLORS = {
 };
 
 export class BrainView {
-  constructor(canvas, labels) {
+  constructor(canvas, labels, plot) {
     this.canvas = canvas;
     this.labels = labels;
+    this.plot = plot;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(34, 1, 0.01, 10);
     this.camera.position.z = 1.65;
@@ -20,6 +21,8 @@ export class BrainView {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
     this.clouds = [];
     this.populations = [];
+    this.history = new Map();
+    this.representatives = new Map();
     this.reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
     new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
     this.resize();
@@ -38,11 +41,20 @@ export class BrainView {
       const buffer = await binaryResponse.arrayBuffer();
       const view = new DataView(buffer);
       const buckets = Array.from({ length: 7 }, () => []);
+      const bodies = Array.from({ length: 7 }, () => []);
       for (let offset = 0; offset < buffer.byteLength; offset += metadata.record_bytes) {
-        buckets[view.getUint8(offset + 16)].push(
+        const category = view.getUint8(offset + 16);
+        buckets[category].push(
           view.getFloat32(offset, true), -view.getFloat32(offset + 8, true), view.getFloat32(offset + 4, true),
         );
+        if (bodies[category].length < 4) bodies[category].push(view.getUint32(offset + 12, true));
       }
+      this.representatives.set("learning", bodies[0]);
+      this.representatives.set("perception", bodies[1]);
+      this.representatives.set("choice", [...bodies[2], ...bodies[3]].slice(0, 4));
+      this.representatives.set("working", bodies[5]);
+      this.representatives.set("appetitive", bodies[0]);
+      this.representatives.set("aversive", bodies[0]);
       buckets.forEach((positions, index) => this.addCloud(positions, index));
     } catch {
       const positions = [];
@@ -66,7 +78,8 @@ export class BrainView {
     this.clouds.push(cloud);
   }
 
-  update(populations) {
+  update(frame) {
+    const populations = frame.populations ?? [];
     this.populations = populations;
     const lookup = Object.fromEntries(populations.map((item) => [item.key, item]));
     const mappings = [lookup.learning, lookup.perception, lookup.choice, lookup.choice, lookup.working, lookup.working, lookup.working];
@@ -79,7 +92,69 @@ export class BrainView {
       cloud.material.size = 0.003 + population.activity * 0.004;
     });
     const active = [...populations].sort((a, b) => b.activity - a.activity).slice(0, 3);
-    this.labels.innerHTML = active.map((item) => `<div><i style="--level:${item.activity}"></i><span><b>${item.label}</b><small>${item.technical} / ${Math.round(item.activity * 100)}%</small></span></div>`).join("");
+    this.labels.innerHTML = active.map((item) => `<button type="button" data-population="${item.key}"><i style="--level:${item.activity}"></i><span><b>${item.label}</b><small>${item.technical} / ${Math.round(item.activity * 100)}%</small></span></button>`).join("");
+    for (const item of populations) {
+      const samples = this.history.get(item.key) ?? [];
+      samples.push(item.activity);
+      if (samples.length > 80) samples.shift();
+      this.history.set(item.key, samples);
+    }
+    this.drawPlot();
+    this.showPhase(frame);
+  }
+
+  showPhase(frame) {
+    const readable = String(frame.phase ?? "model_update").replaceAll("_", " ");
+    document.querySelector("#stimulus-phase").textContent = readable;
+    const stimulus = frame.stimulus ?? {};
+    document.querySelector("#stimulus-detail").textContent = stimulus.reward !== undefined
+      ? `${stimulus.teaching_signal} teaching signal from reward ${Number(stimulus.reward).toFixed(1)}`
+      : `Player ${stimulus.hand_total ?? "-"} vs dealer ${stimulus.dealer_upcard ?? "-"}; candidate action ${stimulus.action ?? "-"}`;
+    const activeKeys = new Set(frame.pathway ?? []);
+    document.querySelectorAll("#stimulus-flow li").forEach((item) => {
+      item.classList.toggle("active", activeKeys.has(item.dataset.key));
+    });
+    const delta = Number(frame.plasticity_delta ?? 0);
+    document.querySelector("#plasticity-readout").innerHTML = `<strong>KC-to-MBON plasticity:</strong> ${Number(frame.plasticity ?? 0).toFixed(5)} (${delta >= 0 ? "+" : ""}${delta.toFixed(5)} this outcome).`;
+  }
+
+  inspect(key) {
+    const item = this.populations.find((population) => population.key === key);
+    if (!item) return;
+    const bodies = this.representatives.get(key) ?? [];
+    document.querySelector("#neuron-inspector").innerHTML = `
+      <div><dt>Accessible role</dt><dd>${item.label}</dd></div>
+      <div><dt>Neuron class / proxy</dt><dd>${item.technical}</dd></div>
+      <div><dt>Current aggregate</dt><dd>${item.activity.toFixed(4)}</dd></div>
+      <div><dt>Representative MaleCNS body IDs</dt><dd>${bodies.join(", ") || "not mapped"}</dd></div>
+      <div><dt>Evidence</dt><dd>${item.evidence}</dd></div>
+      <div><dt>Interpretation</dt><dd>Aggregate value applied to a selected anatomical population; not a single-neuron recording.</dd></div>`;
+  }
+
+  drawPlot() {
+    const width = this.plot.clientWidth;
+    const height = this.plot.clientHeight;
+    const ratio = Math.min(devicePixelRatio, 2);
+    this.plot.width = width * ratio;
+    this.plot.height = height * ratio;
+    const context = this.plot.getContext("2d");
+    context.scale(ratio, ratio);
+    context.clearRect(0, 0, width, height);
+    context.strokeStyle = "#28352e";
+    context.beginPath(); context.moveTo(0, height - 1); context.lineTo(width, height - 1); context.stroke();
+    for (const [key, samples] of this.history) {
+      if (samples.length < 2) continue;
+      const color = COLORS[key] ?? COLORS.working;
+      context.strokeStyle = `#${color.getHexString()}`;
+      context.lineWidth = 1.5;
+      context.beginPath();
+      samples.forEach((value, index) => {
+        const x = index / 79 * width;
+        const y = height - value * (height - 4) - 2;
+        if (index === 0) context.moveTo(x, y); else context.lineTo(x, y);
+      });
+      context.stroke();
+    }
   }
 
   resize() {

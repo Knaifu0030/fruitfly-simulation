@@ -29,6 +29,7 @@ class BrainActivityModel:
             "aversive": Population("aversive", "Aversive reinforcement", "negative-valence teaching aggregate", 340, "engineered valence mapping"),
         }
         self.plasticity = 0.0
+        self.frame_sequence = 0
 
     def decision_frames(self, observation: Observation, action: Action, reward: float | None = None) -> list[dict[str, object]]:
         card_load = min(1.0, len(observation.player_cards) / 5)
@@ -43,16 +44,42 @@ class BrainActivityModel:
             "aversive": max(0.0, -(reward or 0.0)),
         }
         frames = []
-        for phase in range(8):
-            blend = 1 - math.exp(-(phase + 1) / 2.4)
+        phase_names = ["retina", "visual_encoding", "working_state", "action_readout", "decision_committed"]
+        for phase, phase_name in enumerate(phase_names):
+            blend = 1 - math.exp(-(phase + 1) / 1.8)
             populations = []
             for key, population in self.populations.items():
                 population.activity = max(0.015, min(1.0, population.activity * 0.65 + targets[key] * blend * 0.5))
                 populations.append({**population.__dict__})
-            frames.append({"populations": populations, "plasticity": self.plasticity})
+            self.frame_sequence += 1
+            frames.append({
+                "frame": self.frame_sequence,
+                "phase": phase_name,
+                "phase_index": phase,
+                "pathway": ["perception", "working", "choice"],
+                "stimulus": {
+                    "player_cards": list(observation.player_cards),
+                    "dealer_upcard": observation.dealer_upcard,
+                    "hand_total": observation.player_total,
+                    "action": action.value,
+                },
+                "populations": populations,
+                "plasticity": self.plasticity,
+                "plasticity_delta": 0.0,
+                "evidence_class": "simulated aggregate activity",
+                "model_version": "MaleCNS-aggregate/0.2",
+            })
         return frames
 
     def reinforce(self, reward: float) -> list[dict[str, object]]:
+        before = self.plasticity
         self.plasticity = max(0.0, min(0.7, self.plasticity * 0.997 + abs(reward) * 0.002))
         dummy = Observation("", 0, (10, 7), 17, False, None, 10, (Action.STAND,), 0, reward)
-        return self.decision_frames(dummy, Action.STAND, reward)
+        frames = self.decision_frames(dummy, Action.STAND, reward)
+        teaching = "appetitive" if reward > 0 else "aversive" if reward < 0 else "neutral"
+        for index, frame in enumerate(frames):
+            frame["phase"] = ["outcome", "teaching_signal", "kc_mbon_update", "value_stored", "settled"][index]
+            frame["pathway"] = [teaching, "learning", "choice"]
+            frame["plasticity_delta"] = self.plasticity - before
+            frame["stimulus"] = {"reward": reward, "teaching_signal": teaching}
+        return frames
