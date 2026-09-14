@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 import time
 from collections import deque
 from dataclasses import asdict, dataclass
@@ -9,7 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -17,6 +20,7 @@ from .agent import HybridAgent
 from .brain import BrainActivityModel
 from .models import Observation, RoundResult
 from .provider import LocalBlackjackProvider
+from .wallet import DEFAULT_WAGER_PAISE, WalletService
 
 SCHEMA = "fruitfly-blackjack/1"
 RUNTIME = Path(os.getenv("FRUITFLY_RUNTIME_DIR", ".runtime"))
@@ -28,6 +32,20 @@ class RunRequest(BaseModel):
     seed: int = 20260914
     duration_seconds: int = Field(default=7_200, ge=10, le=7_200)
     speed_hands_per_second: float = Field(default=2.0, gt=0, le=100)
+    base_wager_paise: int = Field(default=DEFAULT_WAGER_PAISE, ge=100, le=10_000_000)
+
+
+class PinRequest(BaseModel):
+    pin: str = Field(min_length=4, max_length=128)
+
+
+class TopupRequest(BaseModel):
+    amount_paise: int = Field(ge=100, le=1_000_000_000)
+    public_note: str = Field(default="Virtual funds added", max_length=80)
+
+
+class WalletConfigRequest(BaseModel):
+    base_wager_paise: int = Field(ge=100, le=10_000_000)
 
 
 @dataclass
@@ -84,6 +102,8 @@ class SimulationState:
         self.run_id: str | None = None
         self.run_started: str | None = None
         self.latest: dict[str, Any] | None = None
+        self.paused_reason: str | None = None
+        self.funds_available = asyncio.Event()
 
     @property
     def running(self) -> bool:
@@ -99,17 +119,22 @@ class SimulationState:
             "model": "hybrid-oracle-tabular/0.1",
             "brain_model": "MaleCNS aggregate activity/0.1",
             "provider": "local-blackjack/0.1",
+            "paused_reason": self.paused_reason,
         }
 
 
 state = SimulationState()
+wallet = WalletService()
+password_hasher = PasswordHasher()
+pin_attempts: dict[str, deque[float]] = {}
+admin_sessions: dict[str, float] = {}
 app = FastAPI(title="Fruitfly Blackjack", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin for origin in os.getenv("ALLOWED_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173").split(",") if origin],
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
 )
 
 
@@ -120,6 +145,16 @@ def require_owner(
     valid_token = bool(token and authorization == f"Bearer {token}")
     if not valid_token:
         raise HTTPException(status_code=403, detail="Owner authentication required")
+
+
+def require_wallet_owner(authorization: str | None = Header(default=None)) -> None:
+    token = authorization.removeprefix("Bearer ") if authorization else ""
+    if os.getenv("ADMIN_TOKEN") and secrets.compare_digest(token, os.getenv("ADMIN_TOKEN", "")):
+        return
+    expiry = admin_sessions.get(token, 0)
+    if not token or expiry <= time.time():
+        admin_sessions.pop(token, None)
+        raise HTTPException(status_code=403, detail="Owner session required")
 
 
 def observation_payload(observation: Observation) -> dict[str, Any]:
@@ -139,6 +174,23 @@ async def run_simulation(request: RunRequest) -> None:
         for _ in range(request.hands):
             if state.stop_requested or time.monotonic() >= deadline:
                 break
+            while True:
+                try:
+                    wallet_before, _ = await wallet.reserve(request.base_wager_paise)
+                    if state.paused_reason:
+                        state.paused_reason = None
+                        await state.bus.publish("run.resumed", {"reason": "virtual_funds_added"})
+                    break
+                except ValueError:
+                    state.paused_reason = "insufficient_funds"
+                    state.funds_available.clear()
+                    current_wallet = await wallet.store.load()
+                    await state.bus.publish("wallet.low_balance", wallet.public(current_wallet))
+                    await state.bus.publish("run.paused", {"reason": state.paused_reason})
+                    await state.funds_available.wait()
+                    if state.stop_requested:
+                        return
+            balance_before = wallet_before.balance_paise
             current = provider.start_hand()
             await state.bus.publish("hand.started", {
                 "hand_id": provider.hand_id,
@@ -171,6 +223,9 @@ async def run_simulation(request: RunRequest) -> None:
             for frame in brain.reinforce(result.total_reward):
                 await state.bus.publish("brain.frame", frame)
                 await asyncio.sleep(0.055)
+            wallet_after, wallet_transaction = await wallet.settle(
+                result.total_reward, request.base_wager_paise, result.hand_id
+            )
             update_counters(state.counters, result, decisions)
             hand_record = {
                 "hand_id": result.hand_id,
@@ -179,10 +234,18 @@ async def run_simulation(request: RunRequest) -> None:
                 "total_reward": result.total_reward,
                 "decisions": decisions,
                 "sequence": state.bus.sequence,
+                "wager_paise": request.base_wager_paise,
+                "max_exposure_paise": request.base_wager_paise * 8,
+                "virtual_inr_result_paise": wallet_transaction["amount_paise"],
+                "balance_before_paise": balance_before,
+                "balance_after_paise": wallet_after.balance_paise,
+                "wallet_transaction_id": wallet_transaction["transaction_id"],
             }
             state.history.append(hand_record)
             state.latest = hand_record
             await state.bus.publish("hand.result", hand_record)
+            await state.bus.publish("wallet.transaction", public_transaction(wallet_transaction))
+            await state.bus.publish("wallet.snapshot", wallet.public(wallet_after))
             await state.bus.publish("stats.updated", state.snapshot()["stats"])
             if state.counters.hands and state.counters.hands % 1_000 == 0:
                 checkpoint = save_checkpoint(agent)
@@ -219,6 +282,11 @@ def save_checkpoint(agent: HybridAgent) -> dict[str, Any]:
     return {"hands": state.counters.hands, "accuracy": agent.accuracy, "path": path.name, "created_at": stamp}
 
 
+def public_transaction(item: dict[str, Any]) -> dict[str, Any]:
+    allowed = {"transaction_id", "kind", "amount_paise", "balance_after_paise", "created_at", "hand_id", "public_note"}
+    return {key: value for key, value in item.items() if key in allowed}
+
+
 @app.get("/api/live")
 async def live() -> dict[str, Any]:
     return {"schema": SCHEMA, **state.snapshot()}
@@ -240,6 +308,65 @@ async def hand(hand_id: str) -> dict[str, Any]:
 @app.get("/api/checkpoints")
 async def checkpoints() -> dict[str, Any]:
     return {"schema": SCHEMA, "checkpoints": state.checkpoints}
+
+
+@app.get("/api/wallet")
+async def wallet_summary() -> dict[str, Any]:
+    current = await wallet.store.load()
+    public_topups = [public_transaction(item) for item in await wallet.store.ledger(20) if item.get("kind") == "topup"]
+    return {"schema": SCHEMA, **wallet.public(current), "recent_topups": public_topups[:5]}
+
+
+@app.get("/api/wallet/experiments")
+async def wallet_experiments() -> dict[str, Any]:
+    return {"schema": SCHEMA, "experiments": wallet.experiments(), "warning": "Bet sizing changes volatility, not the underlying expected value."}
+
+
+@app.post("/api/admin/auth/pin")
+async def pin_login(payload: PinRequest, request: Request) -> dict[str, Any]:
+    address = request.client.host if request.client else "unknown"
+    cutoff = time.time() - 900
+    attempts = pin_attempts.setdefault(address, deque())
+    while attempts and attempts[0] < cutoff:
+        attempts.popleft()
+    if len(attempts) >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts; try again later")
+    attempts.append(time.time())
+    pin_hash = os.getenv("OWNER_PIN_HASH", "")
+    try:
+        valid = bool(pin_hash and password_hasher.verify(pin_hash, payload.pin))
+    except VerifyMismatchError:
+        valid = False
+    if not valid:
+        raise HTTPException(status_code=403, detail="Invalid owner PIN")
+    attempts.clear()
+    token = secrets.token_urlsafe(32)
+    admin_sessions[token] = time.time() + 900
+    return {"access_token": token, "expires_in": 900, "token_type": "bearer"}
+
+
+@app.post("/api/admin/wallet/topups", dependencies=[Depends(require_wallet_owner)])
+async def wallet_topup(payload: TopupRequest, idempotency_key: str = Header(alias="Idempotency-Key")) -> dict[str, Any]:
+    current, transaction, created = await wallet.topup(payload.amount_paise, idempotency_key, payload.public_note)
+    state.funds_available.set()
+    if created:
+        await state.bus.publish("wallet.transaction", public_transaction(transaction))
+        await state.bus.publish("wallet.snapshot", wallet.public(current))
+    return {"created": created, "transaction": public_transaction(transaction), "wallet": wallet.public(current)}
+
+
+@app.get("/api/admin/wallet/ledger", dependencies=[Depends(require_wallet_owner)])
+async def wallet_ledger(limit: int = 100) -> dict[str, Any]:
+    return {"transactions": await wallet.store.ledger(max(1, min(limit, 500)))}
+
+
+@app.post("/api/admin/wallet/config", dependencies=[Depends(require_wallet_owner)])
+async def wallet_config(payload: WalletConfigRequest) -> dict[str, Any]:
+    if state.running:
+        raise HTTPException(status_code=409, detail="Wager is locked during an active run")
+    current = await wallet.configure(payload.base_wager_paise)
+    await state.bus.publish("wallet.snapshot", wallet.public(current))
+    return wallet.public(current)
 
 
 @app.post("/api/admin/runs", dependencies=[Depends(require_owner)])

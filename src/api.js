@@ -26,6 +26,40 @@ export class LiveClient {
     }
   }
 
+  async getWallet() {
+    const response = await fetch(`${this.api}/api/wallet`);
+    if (!response.ok) throw new Error("Wallet unavailable");
+    return response.json();
+  }
+
+  async getExperiments() {
+    const response = await fetch(`${this.api}/api/wallet/experiments`);
+    if (!response.ok) throw new Error("Experiments unavailable");
+    return response.json();
+  }
+
+  async login(pin) {
+    const response = await fetch(`${this.api}/api/admin/auth/pin`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin }),
+    });
+    if (!response.ok) throw new Error((await response.json()).detail ?? "Login failed");
+    const result = await response.json();
+    this.ownerToken = result.access_token;
+    setTimeout(() => { this.ownerToken = undefined; }, result.expires_in * 1000);
+    return result;
+  }
+
+  async topup(amountPaise, publicNote) {
+    if (!this.ownerToken) throw new Error("Owner session expired");
+    const response = await fetch(`${this.api}/api/admin/wallet/topups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.ownerToken}`, "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ amount_paise: amountPaise, public_note: publicNote }),
+    });
+    if (!response.ok) throw new Error((await response.json()).detail ?? "Top-up failed");
+    return response.json();
+  }
+
   openSocket() {
     const url = new URL(this.api);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

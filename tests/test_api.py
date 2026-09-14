@@ -1,6 +1,9 @@
+from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 
+from fruitfly_blackjack import service
 from fruitfly_blackjack.service import SCHEMA, app
+from fruitfly_blackjack.wallet import MemoryWalletStore, WalletService
 
 client = TestClient(app)
 
@@ -26,3 +29,34 @@ def test_websocket_starts_with_versioned_snapshot():
         event = socket.receive_json()
         assert event["schema"] == SCHEMA
         assert event["type"] == "session.snapshot"
+
+
+def test_public_wallet_omits_private_ledger_fields():
+    service.wallet = WalletService(MemoryWalletStore())
+    payload = client.get("/api/wallet").json()
+    assert payload["currency"] == "INR_SIM"
+    assert payload["balance_paise"] == 1_000_000
+    assert "idempotency_key" not in payload["recent_topups"][0]
+
+
+def test_pin_session_can_topup_once_idempotently(monkeypatch):
+    service.wallet = WalletService(MemoryWalletStore())
+    service.pin_attempts.clear()
+    service.admin_sessions.clear()
+    monkeypatch.setenv("OWNER_PIN_HASH", PasswordHasher().hash("2468"))
+    login = client.post("/api/admin/auth/pin", json={"pin": "2468"})
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}", "Idempotency-Key": "api-topup"}
+    first = client.post("/api/admin/wallet/topups", headers=headers, json={"amount_paise": 100_000})
+    second = client.post("/api/admin/wallet/topups", headers=headers, json={"amount_paise": 100_000})
+    assert first.json()["created"] is True
+    assert second.json()["created"] is False
+    assert second.json()["wallet"]["balance_paise"] == 1_100_000
+
+
+def test_pin_rate_limit(monkeypatch):
+    service.pin_attempts.clear()
+    monkeypatch.setenv("OWNER_PIN_HASH", PasswordHasher().hash("2468"))
+    for _ in range(5):
+        assert client.post("/api/admin/auth/pin", json={"pin": "wrong"}).status_code == 403
+    assert client.post("/api/admin/auth/pin", json={"pin": "wrong"}).status_code == 429

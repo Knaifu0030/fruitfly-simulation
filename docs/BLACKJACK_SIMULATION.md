@@ -42,6 +42,12 @@ MaleCNS soma positions are anatomical data. The displayed perception, working-st
 
 Public: `GET /api/live`, `/api/stats`, `/api/hands/{id}`, `/api/checkpoints`, and `WS /api/stream`. Owner-only: create, inspect, and stop `/api/admin/runs` using the Azure-held bearer secret. Direct clients cannot impersonate an Azure identity header. Events use `fruitfly-blackjack/1`; sequence numbers let viewers reject duplicates. The current service retains 10,000 hands in memory and writes deterministic checkpoints to `.runtime/checkpoints`.
 
+## Virtual wallet
+
+The canonical wallet uses non-redeemable simulated INR stored as integer paise. It starts at ₹10,000 with a ₹100 flat wager and reserves eight wager units before dealing so splits and doubles cannot make the balance negative. Public endpoints expose the wallet summary and shadow wager experiments. PIN-authenticated owner endpoints add virtual funds, read the full ledger, and configure the next run's wager. PIN sessions expire after 15 minutes and remain only in page memory.
+
+Wallet state and its append-only ledger use Azure Table Storage when `AZURE_STORAGE_ACCOUNT_URL` is configured; local development uses an in-memory store. Neural reinforcement stays in bounded units and is never scaled by the displayed wallet amount.
+
 ## Validation
 
 `uv run pytest -q` checks rules, payouts, split aces, surrender, deterministic policy agreement, API authorization, replay lookup, and the WebSocket envelope. `npm run build` verifies the public client. Run `uv run python scripts/evaluate-blackjack-agent.py --hands 1000000` and archive its seed and output before claiming the 99.5% milestone; no run can guarantee profit because blackjack retains variance and usually a house edge.

@@ -10,6 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11,<3.13"
 license = { text = "MIT" }
 dependencies = [
+  "argon2-cffi>=25,<26",
+  "azure-data-tables>=12.7,<13",
+  "azure-identity>=1.25,<2",
   "fastapi>=0.116,<1",
   "numpy>=2.3,<3",
   "pyarrow>=21,<22",
