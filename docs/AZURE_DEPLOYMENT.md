@@ -17,3 +17,7 @@ The proposed names derive from `namePrefix`: `<prefix>-web`, `<prefix>store`, `<
 Configure OIDC secrets (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`) and repository variables (`AZURE_RESOURCE_GROUP`, `AZURE_NAME_PREFIX`, `CONTAINER_IMAGE`). The resource group must already exist. Use managed identity and Key Vault for runtime secrets. Add cost budgets and alerts, but remember alerts notify; they do not stop compute. The application also enforces a two-hour run TTL and one active run.
 
 Deployment requires a separate explicit approval after the `what-if` output, regional availability, quota, and estimated credit use have been reviewed.
+
+## Current deployment
+
+The initial CPU launch uses resource group `fruitfly-simulation-rg`, Static Web App `ffblackjack0030-web`, storage `ffblackjack0030store`, environment `ffblackjack0030-env`, API `ffblackjack0030-api`, and the pre-existing registry `forgeacraa8c18ec`. The GPU switch remains disabled. A USD 10 monthly resource-group budget with 80% actual and 100% forecast alerts was attempted on 2026-09-14 but Azure rejected it with `RBACAccessDenied`; a subscription billing owner must create this alert.

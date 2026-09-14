@@ -4,6 +4,7 @@ param location string = 'centralindia'
 @description('GPU worker is off by default. Enable only after quota and cost review.')
 param deployGpuWorker bool = false
 param containerImage string = ''
+param deployCpuWorker bool = true
 
 var tags = { project: 'fruitfly-simulation', purpose: 'research-simulator' }
 
@@ -52,6 +53,12 @@ module gpu 'modules/gpu-worker.bicep' = if (deployGpuWorker) {
   params: { namePrefix: namePrefix, location: location, containerImage: containerImage }
 }
 
+module cpu 'modules/cpu-worker.bicep' = if (deployCpuWorker) {
+  name: 'cpu-worker'
+  params: { namePrefix: namePrefix, location: location, containerImage: containerImage }
+}
+
 output staticSiteName string = staticSite.name
 output storageAccountName string = storage.name
 output gpuWorkerEnabled bool = deployGpuWorker
+output cpuWorkerEnabled bool = deployCpuWorker

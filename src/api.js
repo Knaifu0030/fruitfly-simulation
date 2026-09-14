@@ -12,7 +12,13 @@ export class LiveClient {
     try {
       const response = await fetch(`${this.api}/api/live`);
       if (!response.ok) throw new Error("API unavailable");
-      this.onEvent({ type: "session.snapshot", payload: await response.json() });
+      const snapshot = await response.json();
+      this.onEvent({ type: "session.snapshot", payload: snapshot });
+      if (!snapshot.running && !snapshot.latest_hand) {
+        this.onConnection("demo", "Demonstration stream");
+        this.startDemo();
+        return;
+      }
       this.openSocket();
     } catch {
       this.onConnection("demo", "Demonstration stream");
