@@ -87,6 +87,9 @@ export class LiveClient {
       { player: [10, 2], dealer: 3, action: "hit", reward: -1, rationale: "Take another card with hard 12 against dealer 3." },
     ];
     let hands = 0;
+    let balance = 1_000_000;
+    let peak = balance;
+    let maxDrawdown = 0;
     const emit = () => {
       if (this.paused) return;
       const example = examples[hands % examples.length];
@@ -99,6 +102,9 @@ export class LiveClient {
       setTimeout(() => {
         if (this.paused) return;
         hands += 1;
+        balance += Math.round(example.reward * 10_000);
+        peak = Math.max(peak, balance);
+        maxDrawdown = Math.max(maxDrawdown, peak - balance);
         const outcome = example.reward > 0 ? "win" : example.reward < -0.5 ? "loss" : "surrender";
         this.onEvent({ type: "hand.result", payload: { hand_id: `demo-${hands}`, dealer_cards: [example.dealer, 10], results: [{ player_cards: example.player, outcome, reward: example.reward, actions: [example.action] }], total_reward: example.reward, decisions: [{ action: example.action, oracle_action: example.action, correct: true, rationale: example.rationale }] } });
         this.onEvent({ type: "brain.frame", payload: {
@@ -107,6 +113,12 @@ export class LiveClient {
           populations: demoPopulations(example.reward), plasticity: hands * 0.0004, plasticity_delta: Math.abs(example.reward) * 0.0004,
         } });
         this.onEvent({ type: "stats.updated", payload: { hands, wins: Math.ceil(hands * 0.44), losses: Math.floor(hands * 0.48), pushes: Math.floor(hands * 0.08), unit_return: -hands * 0.005, accuracy: Math.min(0.999, 0.91 + hands * 0.002) } });
+        this.onEvent({ type: "wallet.snapshot", payload: {
+          currency: "INR_SIM", label: "simulated INR demonstration", balance_paise: balance,
+          available_paise: balance, reserved_paise: 0, base_wager_paise: 10_000,
+          realized_pnl_paise: balance - 1_000_000, roi: (balance - 1_000_000) / 1_000_000,
+          max_drawdown_paise: maxDrawdown, risk_of_ruin_heuristic: null,
+        } });
       }, 1700);
     };
     emit();
