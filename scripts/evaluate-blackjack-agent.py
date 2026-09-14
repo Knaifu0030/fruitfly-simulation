@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Unaided seeded evaluation. Use one million hands before claiming mastery."""
 
 import argparse
