@@ -225,7 +225,7 @@ class WalletService:
         mean = statistics.fmean(self.outcomes) if self.outcomes else 0
         variance = statistics.pvariance(self.outcomes) if len(self.outcomes) > 1 else state.base_wager_paise**2
         bankroll = max(0, state.balance_paise - state.reserved_paise)
-        risk = math.exp(-2 * max(mean, 1) * bankroll / max(variance, 1)) if bankroll else 1
+        risk = math.exp(-2 * max(mean, 1) * bankroll / max(variance, 1)) if self.outcomes and bankroll else None
         return {
             "currency": "INR_SIM", "label": "simulated INR", "balance_paise": state.balance_paise,
             "available_paise": bankroll, "reserved_paise": state.reserved_paise,
@@ -235,7 +235,8 @@ class WalletService:
             "current_drawdown_paise": current_drawdown, "max_drawdown_paise": state.max_drawdown_paise,
             "average_wager_paise": round(average), "largest_win_paise": state.largest_win_paise,
             "largest_loss_paise": state.largest_loss_paise, "hands_since_topup": state.hands_since_topup,
-            "risk_of_ruin_heuristic": min(1, max(0, risk)), "updated_at": now_iso(),
+            "risk_of_ruin_heuristic": min(1, max(0, risk)) if risk is not None else None,
+            "updated_at": now_iso(),
         }
 
     def experiments(self) -> list[dict[str, Any]]:

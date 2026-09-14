@@ -45,7 +45,7 @@ function renderWallet(data = {}) {
   $("#wallet-pnl").textContent = inr(data.realized_pnl_paise ?? 0);
   $("#wallet-roi").textContent = `${((data.roi ?? 0) * 100).toFixed(2)}%`;
   $("#wallet-drawdown").textContent = inr(data.max_drawdown_paise ?? 0);
-  $("#wallet-risk").textContent = data.risk_of_ruin_heuristic === undefined ? "—" : `${(data.risk_of_ruin_heuristic * 100).toFixed(1)}%`;
+  $("#wallet-risk").textContent = data.risk_of_ruin_heuristic == null ? "—" : `${(data.risk_of_ruin_heuristic * 100).toFixed(1)}%`;
   $("#wallet-pnl").className = (data.realized_pnl_paise ?? 0) >= 0 ? "positive" : "negative";
   if (data.balance_paise !== undefined) {
     balances.push(data.balance_paise);
