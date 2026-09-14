@@ -19,7 +19,9 @@ The repository currently provides:
 
 The processing pipeline selects **165,122 officially traced neurons** and retains **25,563,197 weighted connections** between them. It produces a compact connection table of approximately **125 MiB** from the official 151,856,684-row source graph.
 
-The live dashboard renders **140,024 soma locations** while the local agent plays independent, bankroll-free blackjack. Anatomy is genuine MaleCNS-derived data; activity values are explicitly labeled model outputs and engineered mappings rather than measurements or subjective feelings.
+The live dashboard renders **140,024 soma locations** while the local agent plays independent blackjack with a strictly virtual, non-redeemable INR wallet. Anatomy is genuine MaleCNS-derived data; activity values are explicitly labeled model outputs and engineered mappings rather than measurements or subjective feelings.
+
+The Three.js stage is a complete original table rather than a casino-site replica: a D-shaped S17 table, six-deck shoe, discard tray, wager-sized chips, animated fruit-fly player, stable card suits, split-hand layouts, dealer hole-card reveal, and deterministic replay. The adjacent brain view stays synchronized with perception, choice, action, reinforcement, and learning events.
 
 ## Quick start
 
@@ -123,6 +125,12 @@ Every future visualization should identify whether information is:
 - a simulation result.
 
 See [Scientific Scope and Limitations](docs/SCIENTIFIC_LIMITATIONS.md).
+
+## Blackjack model and virtual wallet
+
+The simulator uses six decks, dealer stands on soft 17, double after split, 3:2 naturals, at most four split hands, one card after split aces, no ace resplitting, and no insurance. Late surrender can be enabled or disabled by the owner for the next run. The agent never receives the hole card or future shoe order.
+
+The wallet starts at ₹10,000 simulated INR with a default ₹100 wager. It reserves up to eight wager units before each hand, records settlement in integer paise, and pauses before dealing if exposure cannot be covered. Owner funding adjustments and game profit/loss are separate ledger concepts. See [Blackjack simulation and wallet](docs/BLACKJACK_SIMULATION.md) for the rules, rewards, API, owner controls, and validation limits.
 
 ## Data and licenses
 

@@ -45,6 +45,18 @@ npm run preview
 
 The build deliberately does not bundle biological data from Git. Generate `viewer/public/data/` before previewing a functional explorer.
 
+To test the frontend against the real local service rather than the labelled demo stream:
+
+```bash
+# terminal 1
+uv run fruitfly-blackjack-api
+
+# terminal 2
+VITE_API_URL=http://127.0.0.1:8000 npm run dev
+```
+
+On PowerShell, set `$env:VITE_API_URL='http://127.0.0.1:8000'` before `npm run dev`. The production build must likewise receive `VITE_API_URL`; it is compiled into the client bundle.
+
 ## Processing design
 
 Large Feather files are memory-mapped and consumed as bounded Arrow record batches. Do not replace this with an all-at-once Pandas load. The full source graph contains more than 151 million rows.
@@ -54,10 +66,12 @@ Large Feather files are memory-mapped and consumed as bounded Arrow record batch
 1. Downloader reports every requested file as ready and verified.
 2. `dataset-summary.json` reports 165,122 simulation neurons.
 3. The compact graph reports 25,563,197 connections.
-4. `npm run build` succeeds.
-5. The explorer reports 140,024 traced somas.
-6. Functional-lens buttons toggle point populations.
-7. Selecting a visible point reveals its body ID and annotation fields.
+4. `uv run ruff check fruitfly_blackjack tests` and `uv run pytest -q` succeed.
+5. `npm run build` succeeds and copies `staticwebapp.config.json` into `dist/`.
+6. The explorer reports 140,024 traced somas.
+7. A real seeded run displays initial cards, decisions, hits, splits, dealer reveal, settlement, shoe progress, and synchronized brain frames.
+8. The owner panel can add/reduce virtual funds, change the next-run wager, and toggle late surrender; reserved exposure cannot be removed.
+9. Desktop and phone layouts remain readable, keyboard-focusable, and respect reduced motion.
 
 ## Regenerating from scratch
 

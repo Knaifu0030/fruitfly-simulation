@@ -21,6 +21,25 @@ Processed graph ─────────────▶ future neural-dynamic
 
 Raw data is immutable and versioned by the tracked manifest. Derived data can always be deleted and reconstructed.
 
+## Live blackjack path
+
+```text
+LocalBlackjackProvider -- public observation --> hybrid policy + exact oracle
+          |                                           | action
+          | immediate card events                     v
+          +------------------------------------- round settlement
+                                                      |
+                             +-- brain aggregate frames
+WebSocket event bus <--------+-- deterministic hand replay
+                             +-- atomic virtual-wallet settlement
+                                      |
+                      Azure Table state + append-only ledger
+```
+
+The browser keeps one felt-state model and renders it in Three.js. `hand.started` creates the visible initial deal and face-down hole card; `agent.decision` selects the active split hand and explains the move; `card.dealt` advances the public shoe and deal animation; `hand.result` reveals the dealer, lays out every split hand, moves spent cards to the tray, and updates the virtual bankroll. The scripted demonstration stream uses the same event contract but is visibly labelled as a demonstration.
+
+The scene is split into focused modules under `src/stage/`: procedural felt and leather textures, table geometry and fixtures, playing-card meshes, and the articulated fly. Card rank comes from simulation data; suit is deterministically derived from the hand ID because the engine intentionally models blackjack values rather than suit-dependent gameplay.
+
 ## Layer boundaries
 
 ### Canonical biological graph
@@ -41,7 +60,7 @@ Will own arenas, stimuli, internal-state variables, training curricula, interven
 
 ### Presentation layer
 
-The explorer consumes compact generated files rather than reading scientific tables in the browser. It prioritizes public explanations and exposes technical annotations on demand.
+The explorer consumes compact generated files rather than reading scientific tables in the browser. It prioritizes public explanations and exposes technical annotations on demand. Screen-space labels are projected from real Three.js anchors, and the table camera adapts to its panel until the viewer intentionally orbits it.
 
 ## Data invariants
 

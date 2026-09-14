@@ -1,167 +1,288 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
-const SUITS = ["S", "H", "D", "C"];
-const rankLabel = (rank) => rank === 11 ? "A" : rank === 10 ? "10" : String(rank);
+import { CARD_HEIGHT, CardTable, faceOf, fanPositions } from "./stage/cards.js";
+import { Fly } from "./stage/fly.js";
+import { TABLE, Table } from "./stage/table.js";
 
-function cardTexture(rank, suitIndex) {
+const HAND_SPACING = 1.44;
+
+function backdropTexture() {
   const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 360;
+  canvas.width = 4;
+  canvas.height = 256;
   const context = canvas.getContext("2d");
-  context.fillStyle = "#f4f2eb";
-  context.fillRect(0, 0, 256, 360);
-  context.strokeStyle = "#b9b5aa";
-  context.lineWidth = 5;
-  context.strokeRect(4, 4, 248, 352);
-  const suit = SUITS[suitIndex % SUITS.length];
-  context.fillStyle = suit === "H" || suit === "D" ? "#a72c2c" : "#161616";
-  context.font = "700 52px system-ui";
-  context.fillText(rankLabel(rank), 20, 62);
-  context.font = "82px serif";
-  context.textAlign = "center";
-  context.fillText(suit, 128, 212);
+  const gradient = context.createLinearGradient(0, 0, 0, 256);
+  gradient.addColorStop(0, "#05070a");
+  gradient.addColorStop(0.42, "#0d1116");
+  gradient.addColorStop(0.72, "#151a20");
+  gradient.addColorStop(1, "#080a0c");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 4, 256);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
+/**
+ * The live table. Owns the camera, lighting and every physical object, and
+ * exposes screen-space anchors so the HTML overlay can label the real card rows
+ * instead of guessing at percentages.
+ */
 export class BlackjackStage {
   constructor(canvas) {
     this.canvas = canvas;
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x070806);
-    this.scene.fog = new THREE.FogExp2(0x070806, 0.055);
-    this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-    this.camera.position.set(0, 8.2, 10.5);
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.shadowMap.enabled = true;
-    this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.target.set(0, 0.2, 0);
-    this.controls.enableDamping = true;
-    this.controls.minDistance = 7;
-    this.controls.maxDistance = 18;
-    this.cards = [];
-    this.mood = "idle";
+    this.host = canvas.parentElement;
     this.reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    this.buildWorld();
-    new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
+    this.shadows = !this.reducedMotion;
+    this.clock = new THREE.Clock();
+    this.width = 1;
+    this.height = 1;
+    this.mood = "idle";
+    this.rowAnchors = new Map();
+
+    this.scene = new THREE.Scene();
+    this.scene.fog = new THREE.FogExp2(0x080a0d, 0.026);
+
+    this.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 90);
+    this.camera.position.set(2.35, 5.15, 6.9);
+
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.8));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.shadowMap.enabled = this.shadows;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    const environment = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = environment.fromScene(new RoomEnvironment()).texture;
+    this.scene.environmentIntensity = 0.3;
+    environment.dispose();
+
+    this.controls = new OrbitControls(this.camera, canvas);
+    this.controls.target.set(0.05, 0.1, 0.35);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.enablePan = false;
+    this.controls.minDistance = 3.4;
+    this.controls.maxDistance = 12;
+    this.controls.minPolarAngle = 0.36;
+    this.controls.maxPolarAngle = 1.22;
+    this.controls.rotateSpeed = 0.7;
+    this.controls.addEventListener("start", () => { this.userMoved = true; });
+
+    this.buildBackdrop();
+    this.buildLighting();
+
+    this.table = new Table(this.scene, { shadows: this.shadows });
+    this.cards = new CardTable(this.scene, {
+      shoeOrigin: [TABLE.shoe[0] + 0.34, TABLE.shoe[1] + 0.5],
+      discardOrigin: TABLE.tray,
+      reducedMotion: this.reducedMotion,
+      shadows: this.shadows,
+    });
+    this.fly = new Fly(this.scene, { reducedMotion: this.reducedMotion, shadows: this.shadows });
+    this.fly.place(TABLE.seatSpot[0], TABLE.seatSpot[1], 0.3);
+    this.buildFocusRing();
+    this.table.setWager(10_000);
+
+    this.observer = new ResizeObserver(() => this.resize());
+    this.observer.observe(this.host);
     this.resize();
-    this.tick(0);
+
+    document.fonts?.ready.then(() => this.refreshAssets()).catch(() => {});
+    this.renderer.setAnimationLoop(() => this.frame());
   }
 
-  buildWorld() {
-    this.scene.add(new THREE.HemisphereLight(0xcbd9cb, 0x17110b, 1.2));
-    const key = new THREE.SpotLight(0xf1c66d, 90, 40, Math.PI / 5, 0.55);
-    key.position.set(-4, 10, 7);
-    key.castShadow = true;
-    this.scene.add(key);
-    const rim = new THREE.PointLight(0x45bac8, 18, 20);
-    rim.position.set(5, 4, -3);
+  buildBackdrop() {
+    const backdrop = new THREE.Mesh(
+      new THREE.SphereGeometry(30, 24, 18),
+      new THREE.MeshBasicMaterial({ map: backdropTexture(), side: THREE.BackSide, fog: false }),
+    );
+    this.scene.add(backdrop);
+  }
+
+  buildLighting() {
+    this.scene.add(new THREE.HemisphereLight(0x2b3b47, 0x100c08, 0.7));
+
+    // Pendant key light hanging over the layout, wide enough to light the whole
+    // playing area rather than a single hot pool.
+    const key = new THREE.SpotLight(0xffd9ab, 150, 14, 0.95, 0.75, 1.6);
+    key.position.set(-0.4, 4.6, 0.9);
+    key.target.position.set(0.1, 0, 0.35);
+    key.castShadow = this.shadows;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.camera.near = 1.2;
+    key.shadow.camera.far = 11;
+    key.shadow.bias = -0.0008;
+    key.shadow.normalBias = 0.024;
+    this.scene.add(key, key.target);
+    this.keyLight = key;
+
+    const fill = new THREE.SpotLight(0xa7d6ea, 60, 18, 1.05, 0.95, 1.5);
+    fill.position.set(3.6, 3.9, -3.2);
+    fill.target.position.set(0, 0, -0.3);
+    this.scene.add(fill, fill.target);
+
+    const rim = new THREE.PointLight(0xffb066, 9, 6.5, 2);
+    rim.position.set(-2.5, 1.2, 2.6);
     this.scene.add(rim);
 
-    const table = new THREE.Mesh(
-      new THREE.CylinderGeometry(6.4, 6.4, 0.45, 64, 1, false, 0, Math.PI),
-      new THREE.MeshStandardMaterial({ color: 0x16392b, roughness: 0.76, metalness: 0.05 }),
-    );
-    table.position.set(0, -0.35, 1.1);
-    table.rotation.y = Math.PI / 2;
-    table.receiveShadow = true;
-    this.scene.add(table);
-    const rail = new THREE.Mesh(
-      new THREE.TorusGeometry(6.42, 0.24, 12, 80, Math.PI),
-      new THREE.MeshStandardMaterial({ color: 0x3a2416, roughness: 0.42 }),
-    );
-    rail.position.set(0, -0.12, 1.1);
-    rail.rotation.set(Math.PI / 2, 0, Math.PI / 2);
-    this.scene.add(rail);
-
-    this.fly = new THREE.Group();
-    const dark = new THREE.MeshStandardMaterial({ color: 0x181410, roughness: 0.48 });
-    const amber = new THREE.MeshStandardMaterial({ color: 0x9b641f, roughness: 0.5 });
-    const wing = new THREE.MeshPhysicalMaterial({ color: 0xa8d8d6, transparent: true, opacity: 0.34, roughness: 0.2 });
-    const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.46, 24, 16), amber);
-    abdomen.scale.set(1, 1.7, 0.88);
-    const thorax = new THREE.Mesh(new THREE.SphereGeometry(0.48, 24, 16), dark);
-    thorax.position.y = 0.72;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.39, 24, 16), dark);
-    head.position.y = 1.32;
-    this.fly.add(abdomen, thorax, head);
-    for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.2, 18, 12), new THREE.MeshStandardMaterial({ color: 0x8f211e, emissive: 0x3a0605 }));
-      eye.position.set(side * 0.3, 1.42, 0.12);
-      this.fly.add(eye);
-      const wingMesh = new THREE.Mesh(new THREE.SphereGeometry(0.42, 18, 10), wing);
-      wingMesh.scale.set(0.52, 1.65, 0.09);
-      wingMesh.position.set(side * 0.48, 0.62, -0.08);
-      wingMesh.rotation.z = side * 0.5;
-      this.fly.add(wingMesh);
-      for (let leg = 0; leg < 3; leg += 1) {
-        const geometry = new THREE.CylinderGeometry(0.025, 0.018, 1.25, 8);
-        const limb = new THREE.Mesh(geometry, dark);
-        limb.position.set(side * (0.52 + leg * 0.08), 0.45 - leg * 0.25, 0.22 + leg * 0.16);
-        limb.rotation.z = side * (0.7 + leg * 0.17);
-        this.fly.add(limb);
-      }
-    }
-    this.fly.scale.setScalar(1.05);
-    this.fly.position.set(0, 0.2, 3.9);
-    this.fly.rotation.x = -0.18;
-    this.scene.add(this.fly);
+    const seatGlow = new THREE.PointLight(0xfff0d2, 3.2, 3.2, 2);
+    seatGlow.position.set(TABLE.seatSpot[0] - 0.5, 0.75, TABLE.seatSpot[1] + 0.3);
+    this.scene.add(seatGlow);
   }
 
-  setHand(playerCards = [], dealerCards = []) {
-    this.cards.forEach((card) => {
-      this.scene.remove(card);
-      card.geometry.dispose();
-      card.material.map?.dispose();
-      card.material.dispose();
+  buildFocusRing() {
+    const geometry = new THREE.RingGeometry(0.72, 0.755, 64);
+    geometry.rotateX(-Math.PI / 2);
+    this.focusRing = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+      color: 0xf0b458, transparent: true, opacity: 0, depthWrite: false,
+    }));
+    this.focusRing.position.set(TABLE.playerCenter, 0.004, TABLE.playerCards);
+    this.focusRing.scale.set(1.35, 1, 0.82);
+    this.scene.add(this.focusRing);
+  }
+
+  /**
+   * @param {object} state
+   * @param {string} state.handId       identity used to seed suits deterministically
+   * @param {number[]} state.dealer     dealer ranks that are public
+   * @param {boolean} state.dealerHidden whether a face-down hole card is in play
+   * @param {number[][]} state.hands    one entry per player hand
+   * @param {number} state.activeIndex  which player hand the agent is acting on
+   */
+  showHand({ handId = "hand", dealer = [], dealerHidden = false, hands = [], activeIndex = 0 }) {
+    const rows = [];
+    this.rowAnchors.clear();
+
+    const dealerCards = dealer.map((rank, index) => ({ rank, index }));
+    if (dealerHidden) dealerCards.push({ rank: null, index: dealerCards.length });
+    if (dealerCards.length) {
+      rows.push(this.buildRow("dealer", handId, dealerCards, 0, TABLE.dealerCards));
+    }
+
+    const visible = hands.filter((cards) => cards?.length);
+    const offset = ((visible.length - 1) * HAND_SPACING) / 2;
+    visible.forEach((cards, index) => {
+      const centerX = TABLE.playerCenter + index * HAND_SPACING - offset;
+      rows.push(this.buildRow(`hand-${index}`, handId, cards.map((rank, position) => ({ rank, index: position })), centerX, TABLE.playerCards));
     });
-    this.cards = [];
-    const add = (rank, index, dealer) => {
-      const card = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.82, 1.14),
-        new THREE.MeshStandardMaterial({ map: cardTexture(rank, index), roughness: 0.72 }),
-      );
-      const spread = dealer ? 1.05 : 0.92;
-      card.position.set((index - (dealerCards.length - 1) / 2) * spread, 0.05, dealer ? -1.55 : 1.55);
-      card.rotation.set(-Math.PI / 2, 0, (index - 1) * 0.04);
-      card.scale.setScalar(this.reducedMotion ? 1 : 0.01);
-      card.userData.birth = performance.now() + index * 100;
-      this.scene.add(card);
-      this.cards.push(card);
+
+    this.cards.layout(rows);
+    this.activeAnchor = this.rowAnchors.get(`hand-${Math.min(activeIndex, Math.max(0, visible.length - 1))}`);
+    if (this.activeAnchor && visible.length > 1) {
+      this.focusRing.position.x = this.activeAnchor.x;
+      this.focusTarget = 0.34;
+    } else {
+      this.focusTarget = 0;
+    }
+  }
+
+  buildRow(key, handId, cards, centerX, zLine) {
+    const fan = fanPositions(cards.length, centerX, zLine);
+    this.rowAnchors.set(key, { x: centerX, z: zLine, count: cards.length });
+    return {
+      key,
+      slot: `${centerX.toFixed(2)}:${zLine.toFixed(2)}`,
+      cards: cards.map((card, index) => {
+        const hidden = card.rank == null;
+        const face = hidden ? { label: "10", suit: "spade" } : faceOf(card.rank, `${handId}:${key}:${index}:${card.rank}`);
+        return { ...face, ...fan[index], hidden, placeholder: hidden };
+      }),
     };
-    dealerCards.forEach((rank, index) => add(rank, index, true));
-    playerCards.forEach((rank, index) => add(rank, index, false));
   }
 
   setMood(mood) {
     this.mood = mood;
+    this.fly.setMood(mood);
+  }
+
+  setWager(paise) {
+    this.table.setWager(paise);
+  }
+
+  setShoeProgress(fraction) {
+    this.table.setShoeProgress(fraction);
+  }
+
+  /** Screen-space label anchors, in CSS pixels relative to the canvas. */
+  anchors() {
+    const result = {};
+    for (const [key, anchor] of this.rowAnchors) {
+      const dealer = key === "dealer";
+      // Sit the label just outside its row, clear of the fly's seat.
+      const depth = dealer ? -CARD_HEIGHT * 0.78 : CARD_HEIGHT * 0.9;
+      const sideways = dealer ? 0 : 0.34;
+      const point = new THREE.Vector3(anchor.x + sideways, 0.05, anchor.z + depth).project(this.camera);
+      result[key] = {
+        x: (point.x * 0.5 + 0.5) * this.width,
+        y: (-point.y * 0.5 + 0.5) * this.height,
+        onScreen: Math.abs(point.x) < 1.1 && Math.abs(point.y) < 1.1,
+      };
+    }
+    return result;
   }
 
   resize() {
-    const rect = this.canvas.parentElement.getBoundingClientRect();
-    this.renderer.setSize(rect.width, rect.height, false);
-    this.camera.aspect = rect.width / Math.max(1, rect.height);
+    const rect = this.host.getBoundingClientRect();
+    this.width = Math.max(1, Math.round(rect.width));
+    this.height = Math.max(1, Math.round(rect.height));
+    this.renderer.setSize(this.width, this.height, false);
+    this.camera.aspect = this.width / this.height;
     this.camera.updateProjectionMatrix();
+    this.frameCamera();
   }
 
-  tick(time) {
-    requestAnimationFrame((next) => this.tick(next));
-    const pulse = Math.sin(time * 0.004);
-    if (!this.reducedMotion) {
-      const moodLift = this.mood === "win" ? 0.16 : this.mood === "loss" ? -0.07 : 0;
-      this.fly.position.y = 0.2 + pulse * 0.025 + moodLift;
-      this.fly.rotation.z = this.mood === "thinking" ? pulse * 0.035 : 0;
-      for (const card of this.cards) {
-        const progress = Math.max(0, Math.min(1, (time - card.userData.birth) / 360));
-        const eased = 1 - Math.pow(1 - progress, 4);
-        card.scale.setScalar(eased);
+  /**
+   * Places the camera so a fixed slice of the layout fills the frame whatever
+   * the panel shape is. Narrow panels get a closer, steeper shot instead of a
+   * wide one padded out with empty room. Skipped once the viewer has orbited.
+   */
+  frameCamera() {
+    if (this.userMoved) return;
+    const tall = this.camera.aspect < 1;
+    const wanted = this.width < 700 ? 4.4 : this.width < 1150 ? 6 : 7.2;
+    const halfFov = THREE.MathUtils.degToRad(this.camera.fov) / 2;
+    const distance = THREE.MathUtils.clamp(wanted / (2 * Math.tan(halfFov) * this.camera.aspect), 4.2, 11.5);
+    const azimuth = 0.335;
+    const elevation = tall ? 0.86 : 0.62;
+    const target = this.controls.target;
+    this.camera.position.set(
+      target.x + Math.sin(azimuth) * Math.cos(elevation) * distance,
+      target.y + Math.sin(elevation) * distance,
+      target.z + Math.cos(azimuth) * Math.cos(elevation) * distance,
+    );
+    this.camera.lookAt(target);
+    this.controls.update();
+  }
+
+  refreshAssets() {
+    this.table.refreshFelt();
+    this.cards.refreshFaces();
+  }
+
+  frame() {
+    // Generous clamp: on a slow first frame or a background tab the animation
+    // should still make real progress rather than crawl behind the event stream.
+    const delta = Math.min(0.2, this.clock.getDelta());
+    const time = this.clock.elapsedTime;
+    this.cards.update(delta);
+    this.fly.update(delta, time);
+    if (this.focusRing) {
+      const target = this.focusTarget ?? 0;
+      this.focusRing.material.opacity += (target - this.focusRing.material.opacity) * Math.min(1, delta * 4);
+      if (this.activeAnchor) {
+        this.focusRing.position.x += (this.activeAnchor.x - this.focusRing.position.x) * Math.min(1, delta * 6);
       }
+    }
+    if (!this.reducedMotion) {
+      this.keyLight.intensity = 150 + Math.sin(time * 0.7) * 3;
     }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
+    this.onFrame?.();
   }
 }

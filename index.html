@@ -4,62 +4,111 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Watch a connectome-constrained virtual fruit fly learn optimal blackjack strategy." />
+    <meta name="theme-color" content="#0a0d0b" />
     <link rel="icon" href="data:," />
     <title>Fruitfly Blackjack Lab</title>
   </head>
   <body>
+    <a class="skip-link" href="#lab-panel">Skip to the data panels</a>
     <div id="app">
       <header class="topbar">
         <a class="identity" href="/" aria-label="Fruitfly Blackjack Lab home">
           <span class="mark" aria-hidden="true"></span>
           <span><strong>Fruitfly Blackjack Lab</strong><small>Independent research simulation</small></span>
         </a>
-        <div class="live-state"><i></i><span id="connection-label">Connecting</span></div>
+        <div class="topbar-meta">
+          <p class="live-state"><i aria-hidden="true"></i><span id="connection-label">Connecting</span></p>
+        </div>
       </header>
 
       <main>
         <section class="stage-panel" aria-label="Live three-dimensional blackjack table">
           <canvas id="stage-canvas"></canvas>
-          <div class="table-overlay">
-            <div class="hand-label dealer-label">Dealer <b id="dealer-total">-</b></div>
-            <div class="hand-label player-label">Fly <b id="player-total">-</b></div>
+          <div class="stage-vignette" aria-hidden="true"></div>
+
+          <ul class="table-rules" aria-label="Table rules in force">
+            <li>Six decks</li>
+            <li>Dealer stands on all 17s</li>
+            <li>Blackjack pays 3:2</li>
+            <li id="rule-surrender">Late surrender</li>
+            <li class="rule-count" id="rule-dealt">Shoe idle</li>
+          </ul>
+
+          <div class="hand-marker" id="marker-dealer" hidden>
+            <span>Dealer</span><b id="dealer-total">—</b>
           </div>
-          <div class="decision" aria-live="polite">
-            <span id="decision-action">Waiting for a hand</span>
-            <p id="decision-rationale">The simulation will explain each decision as it happens.</p>
-            <div id="oracle-check" class="oracle-check">Optimal strategy comparison ready</div>
+          <div class="hand-marker hand-marker-player" id="marker-player" hidden>
+            <span>Fly</span><b id="player-total">—</b>
           </div>
-          <div id="outcome-flash" class="outcome-flash" aria-live="assertive"></div>
+
+          <div class="stage-badge" aria-label="Current simulated wager">
+            <span>Wager this hand</span>
+            <b id="stage-wager">₹100.00</b>
+            <small>Reserved exposure <span id="stage-exposure">₹800.00</span></small>
+          </div>
+
+          <div class="decision-card" aria-live="polite">
+            <p class="eyebrow">Agent decision</p>
+            <div class="decision-head">
+              <strong id="decision-action">Waiting for a hand</strong>
+              <span class="decision-hand" id="decision-hand"></span>
+            </div>
+            <p id="decision-rationale">The simulation explains each decision as it happens.</p>
+            <p class="oracle-check" id="oracle-check" data-state="idle">
+              <i aria-hidden="true"></i><span id="oracle-text">Optimal strategy comparison ready</span>
+            </p>
+          </div>
+
+          <div id="outcome-flash" class="outcome-flash" aria-live="assertive">
+            <b id="outcome-label"></b>
+            <span id="outcome-delta"></span>
+          </div>
+
+          <p class="stage-hint">Drag to orbit the table</p>
         </section>
 
-        <aside class="lab-panel">
+        <aside class="lab-panel" id="lab-panel">
           <section class="wallet-panel" aria-label="Virtual INR wallet">
             <div class="section-title">
               <div><h2>Virtual wallet</h2><p>Simulated INR / no cash value</p></div>
               <button id="owner-wallet" type="button">Owner controls</button>
             </div>
-            <div class="wallet-balance"><span>Available balance</span><strong id="wallet-balance">₹10,000.00</strong><small id="wallet-status">₹0 reserved</small></div>
+            <div class="wallet-balance">
+              <span>Available balance</span>
+              <strong id="wallet-balance">₹10,000.00</strong>
+              <small id="wallet-status">₹0.00 reserved / simulated INR</small>
+            </div>
             <dl class="wallet-metrics">
-              <div><dt>Current wager</dt><dd id="wallet-wager">₹100</dd></div>
-              <div><dt>Profit / loss</dt><dd id="wallet-pnl">₹0</dd></div>
+              <div><dt>Current wager</dt><dd id="wallet-wager">₹100.00</dd></div>
+              <div><dt>Profit / loss</dt><dd id="wallet-pnl">₹0.00</dd></div>
               <div><dt>ROI</dt><dd id="wallet-roi">0.00%</dd></div>
-              <div><dt>Max drawdown</dt><dd id="wallet-drawdown">₹0</dd></div>
+              <div><dt>Max drawdown</dt><dd id="wallet-drawdown">₹0.00</dd></div>
               <div><dt>Ruin risk*</dt><dd id="wallet-risk">—</dd></div>
               <div><dt>Late surrender</dt><dd id="wallet-surrender">Enabled</dd></div>
             </dl>
-            <canvas id="balance-chart" class="balance-chart" aria-label="Virtual balance history"></canvas>
+            <figure class="chart-frame">
+              <canvas id="balance-chart" class="balance-chart" aria-label="Virtual balance history"></canvas>
+              <figcaption id="balance-caption">Balance history starts once the first hand settles.</figcaption>
+            </figure>
             <p class="risk-note">*Heuristic estimate from observed simulated outcomes, not a prediction or income guarantee.</p>
-            <details class="experiments"><summary>Compare wager experiments</summary><div id="experiment-list">Waiting for results…</div></details>
+            <details class="experiments">
+              <summary>Compare wager experiments</summary>
+              <div id="experiment-list">Waiting for results…</div>
+            </details>
           </section>
+
           <section class="brain-monitor">
             <div class="section-title">
               <div><h2>Live brain activity</h2><p>MaleCNS-linked population model</p></div>
-              <button id="brain-info" type="button" aria-expanded="false">Technical details</button>
+              <button id="brain-info" type="button" aria-expanded="false" aria-controls="technical-panel">Technical details</button>
             </div>
-            <canvas id="brain-canvas" aria-label="Three-dimensional fruit-fly brain activity"></canvas>
+            <div class="brain-frame">
+              <canvas id="brain-canvas" aria-label="Three-dimensional fruit-fly central nervous system activity"></canvas>
+              <p class="brain-caption" id="brain-caption">Loading MaleCNS soma positions…</p>
+            </div>
             <div class="stimulus-readout" aria-live="polite">
               <span>Current stimulus phase</span><b id="stimulus-phase">Waiting for sensory input</b>
-              <small id="stimulus-detail">Cards will enter through the engineered visual-encoding pathway.</small>
+              <small id="stimulus-detail">Cards enter through the engineered visual-encoding pathway.</small>
             </div>
             <ol id="stimulus-flow" class="stimulus-flow" aria-label="Stimulus propagation stages">
               <li data-key="perception">See cards</li><li data-key="working">Represent hand</li><li data-key="choice">Select action</li><li data-key="learning">Apply outcome</li>
@@ -69,15 +118,15 @@
             <div id="technical-panel" class="technical-panel" hidden>
               <p><strong>Evidence:</strong> soma anatomy comes from MaleCNS v1.0. Activity is generated by a declared aggregate dynamical model; blackjack-to-circuit mappings are engineered.</p>
               <p><strong>Language:</strong> reinforcement signals model appetitive or aversive value. They do not establish subjective happiness or suffering.</p>
-              <dl id="neuron-inspector"><div><dt>Selected population</dt><dd>Select an activity row below</dd></div></dl>
+              <dl id="neuron-inspector"><div><dt>Selected population</dt><dd>Select an activity row above</dd></div></dl>
               <p id="plasticity-readout"><strong>KC-to-MBON plasticity:</strong> no update yet.</p>
             </div>
           </section>
 
           <section class="scoreboard">
-            <div class="section-title"><div><h2>Learning record</h2><p id="hand-id">No completed hands yet</p></div><span id="hand-count">0 hands</span></div>
+            <div class="section-title"><div><h2>Learning record</h2><p id="hand-id">No completed hands yet</p></div><span class="hand-count" id="hand-count">0 hands</span></div>
             <dl class="metrics">
-              <div><dt>Strategy accuracy</dt><dd id="accuracy">100.0%</dd></div>
+              <div><dt>Strategy accuracy</dt><dd id="accuracy">100.00%</dd></div>
               <div><dt>Wins</dt><dd id="wins">0</dd></div>
               <div><dt>Losses</dt><dd id="losses">0</dd></div>
               <div><dt>Pushes</dt><dd id="pushes">0</dd></div>
@@ -94,10 +143,14 @@
         </aside>
       </main>
 
-      <dialog id="wallet-dialog" class="wallet-dialog">
+      <dialog id="wallet-dialog" class="wallet-dialog" aria-labelledby="wallet-dialog-title">
         <form method="dialog" class="dialog-shell">
-          <div class="section-title"><div><h2>Owner wallet controls</h2><p>Virtual funds only</p></div><button value="cancel" aria-label="Close">Close</button></div>
+          <div class="section-title">
+            <div><h2 id="wallet-dialog-title">Owner wallet controls</h2><p>Virtual funds only</p></div>
+            <button value="cancel" aria-label="Close owner controls">Close</button>
+          </div>
           <div id="pin-step">
+            <input class="visually-hidden" type="text" name="username" autocomplete="username" value="owner" tabindex="-1" aria-hidden="true">
             <label>Owner PIN<input id="owner-pin" type="password" inputmode="numeric" autocomplete="current-password" minlength="4" required></label>
             <button id="pin-login" type="button" class="primary-action">Unlock for 15 minutes</button>
           </div>
@@ -122,7 +175,7 @@
 
       <footer>
         <span>No wagers / no casino connection / no real money</span>
-        <a href="https://github.com/Knaifu0030/fruitfly-simulation">Source & methodology</a>
+        <a href="https://github.com/Knaifu0030/fruitfly-simulation">Source &amp; methodology</a>
       </footer>
     </div>
     <script type="module" src="/src/main.js"></script>

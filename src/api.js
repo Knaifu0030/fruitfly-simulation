@@ -1,3 +1,55 @@
+const DEMO_HANDS = [
+  {
+    player: [10, 6], upcard: 10, dealerFinal: [10, 7],
+    action: "surrender", actions: ["surrender"], finalHands: [[10, 6]],
+    reward: -0.5, outcome: "surrender",
+    rationale: "Give up half a unit with hard 16 against dealer 10.",
+  },
+  {
+    player: [8, 8], upcard: 6, dealerFinal: [6, 10, 8],
+    action: "split", actions: ["split", "hit", "stand"], finalHands: [[8, 3, 10], [8, 10]],
+    reward: 2, outcome: "win",
+    rationale: "Separate the pair into two hands against a weak dealer 6.",
+  },
+  {
+    player: [11, 7], upcard: 6, dealerFinal: [6, 10, 2, 4],
+    action: "double", actions: ["double"], finalHands: [[11, 7, 3]],
+    reward: 2, outcome: "win",
+    rationale: "Double soft 18 against a vulnerable dealer 6.",
+  },
+  {
+    player: [10, 10], upcard: 9, dealerFinal: [9, 9],
+    action: "stand", actions: ["stand"], finalHands: [[10, 10]],
+    reward: 1, outcome: "win",
+    rationale: "Keep hard 20 against dealer 9 rather than risking the total.",
+  },
+  {
+    player: [10, 2], upcard: 3, dealerFinal: [3, 10, 5],
+    action: "hit", actions: ["hit"], finalHands: [[10, 2, 10]],
+    reward: -1, outcome: "loss",
+    rationale: "Take another card with hard 12 against dealer 3.",
+  },
+  {
+    player: [11, 10], upcard: 7, dealerFinal: [7, 10],
+    action: null, actions: [], finalHands: [[11, 10]],
+    reward: 1.5, outcome: "blackjack",
+    rationale: "Natural blackjack settles immediately and pays three to two.",
+  },
+];
+
+function demoPopulations(reward) {
+  return [
+    ["perception", "Card perception", "visual projection neurons", 9201, "dataset + model mapping", 0.82],
+    ["working", "Current hand", "central complex / recurrent state proxy", 2950, "engineered model mapping", 0.68],
+    ["choice", "Action selection", "descending-neuron readout", 1314, "dataset + engineered readout", 0.9],
+    ["learning", "Learning & memory", "Kenyon cells and MBONs", 4161, "dataset + model plasticity", 0.55],
+    ["appetitive", "Appetitive reinforcement", "dopaminergic neuron aggregate", 340, "dataset + reward mapping", reward > 0 ? 1 : 0.04],
+    ["aversive", "Aversive reinforcement", "negative-valence teaching aggregate", 340, "engineered valence mapping", reward < 0 ? 1 : 0.04],
+  ].map(([key, label, technical, neuronCount, evidence, activity]) => ({
+    key, label, technical, neuron_count: neuronCount, evidence, activity,
+  }));
+}
+
 export class LiveClient {
   constructor(onEvent, onConnection) {
     this.onEvent = onEvent;
@@ -88,62 +140,101 @@ export class LiveClient {
     });
   }
 
+  /**
+   * Clearly-labelled scripted stream used when the simulation API is offline.
+   * It exercises the same event contract as the live service, including
+   * surrender, splits, doubles and a natural, so the table is never idle.
+   */
   startDemo() {
-    const examples = [
-      { player: [10, 6], dealer: 10, action: "surrender", reward: -0.5, rationale: "Give up half a unit with hard 16 against dealer 10." },
-      { player: [8, 8], dealer: 6, action: "split", reward: 1, rationale: "Separate the pair into two hands against dealer 6." },
-      { player: [11, 7], dealer: 6, action: "double", reward: 2, rationale: "Double soft 18 against a vulnerable dealer 6." },
-      { player: [10, 10], dealer: 9, action: "stand", reward: 1, rationale: "Keep hard 20 against dealer 9." },
-      { player: [10, 2], dealer: 3, action: "hit", reward: -1, rationale: "Take another card with hard 12 against dealer 3." },
-    ];
+    const wager = 10_000;
+    let index = 0;
     let hands = 0;
+    let dealt = 0;
     let balance = 1_000_000;
     let peak = balance;
     let maxDrawdown = 0;
-    const emit = () => {
+
+    const deal = () => {
       if (this.paused) return;
-      const example = examples[hands % examples.length];
-      this.onEvent({ type: "agent.decision", payload: { action: example.action, oracle_action: example.action, correct: true, rationale: example.rationale, observation: { player_cards: example.player, player_total: example.player.reduce((a, b) => a + b, 0), dealer_upcard: example.dealer } } });
+      const example = DEMO_HANDS[index % DEMO_HANDS.length];
+      index += 1;
+      const handId = `demo-${index}`;
+      const playerTotal = example.player.reduce((sum, card) => sum + card, 0);
+      dealt += 4;
+
+      this.onEvent({ type: "hand.started", payload: { hand_id: handId, dealer_upcard: example.upcard, player_cards: example.player } });
       this.onEvent({ type: "brain.frame", payload: {
-        phase: "action_readout", pathway: ["perception", "working", "choice"],
-        stimulus: { player_cards: example.player, dealer_upcard: example.dealer, hand_total: example.player.reduce((a, b) => a + b, 0), action: example.action },
-        populations: demoPopulations(example.reward), plasticity: hands * 0.0004, plasticity_delta: 0,
+        phase: "visual_encoding", pathway: ["perception", "working"],
+        stimulus: { player_cards: example.player, dealer_upcard: example.upcard, hand_total: playerTotal, action: example.action ?? "none" },
+        populations: demoPopulations(0), plasticity: hands * 0.0004, plasticity_delta: 0,
       } });
+
+      const decision = example.action && {
+        action: example.action, oracle_action: example.action, correct: true, rationale: example.rationale,
+        observation: {
+          hand_id: handId, hand_index: 0, player_cards: example.player, player_total: playerTotal,
+          soft: example.player.includes(11), dealer_upcard: example.upcard, cards_dealt: dealt,
+        },
+      };
+
+      setTimeout(() => {
+        if (this.paused) return;
+        if (decision) {
+          this.onEvent({ type: "agent.decision", payload: decision });
+          this.onEvent({ type: "brain.frame", payload: {
+            phase: "action_readout", pathway: ["perception", "working", "choice"],
+            stimulus: { player_cards: example.player, dealer_upcard: example.upcard, hand_total: playerTotal, action: example.action },
+            populations: demoPopulations(0), plasticity: hands * 0.0004, plasticity_delta: 0,
+          } });
+        }
+      }, 700);
+
       setTimeout(() => {
         if (this.paused) return;
         hands += 1;
-        balance += Math.round(example.reward * 10_000);
+        dealt += example.finalHands.flat().length + example.dealerFinal.length - 4;
+        const delta = Math.round(example.reward * wager);
+        balance += delta;
         peak = Math.max(peak, balance);
         maxDrawdown = Math.max(maxDrawdown, peak - balance);
-        const outcome = example.reward > 0 ? "win" : example.reward < -0.5 ? "loss" : "surrender";
-        this.onEvent({ type: "hand.result", payload: { hand_id: `demo-${hands}`, dealer_cards: [example.dealer, 10], results: [{ player_cards: example.player, outcome, reward: example.reward, actions: [example.action] }], total_reward: example.reward, decisions: [{ action: example.action, oracle_action: example.action, correct: true, rationale: example.rationale }] } });
+
+        this.onEvent({ type: "hand.result", payload: {
+          hand_id: handId,
+          dealer_cards: example.dealerFinal,
+          results: example.finalHands.map((cards, hand) => ({
+            hand_index: hand, player_cards: cards, dealer_cards: example.dealerFinal,
+            outcome: example.outcome, reward: example.reward / example.finalHands.length,
+            wager: 1, actions: hand === 0 ? example.actions : [],
+          })),
+          total_reward: example.reward,
+          decisions: decision ? [decision] : [],
+          wager_paise: wager,
+          rules: { late_surrender: true },
+          virtual_inr_result_paise: delta,
+          balance_before_paise: balance - delta,
+          balance_after_paise: balance,
+        } });
         this.onEvent({ type: "brain.frame", payload: {
           phase: "kc_mbon_update", pathway: [example.reward > 0 ? "appetitive" : "aversive", "learning", "choice"],
           stimulus: { reward: example.reward, teaching_signal: example.reward > 0 ? "appetitive" : "aversive" },
           populations: demoPopulations(example.reward), plasticity: hands * 0.0004, plasticity_delta: Math.abs(example.reward) * 0.0004,
         } });
-        this.onEvent({ type: "stats.updated", payload: { hands, wins: Math.ceil(hands * 0.44), losses: Math.floor(hands * 0.48), pushes: Math.floor(hands * 0.08), unit_return: -hands * 0.005, accuracy: Math.min(0.999, 0.91 + hands * 0.002) } });
+        this.onEvent({ type: "stats.updated", payload: {
+          hands, wins: Math.ceil(hands * 0.44), losses: Math.floor(hands * 0.48),
+          pushes: Math.floor(hands * 0.08), unit_return: -hands * 0.005,
+          accuracy: Math.min(0.999, 0.91 + hands * 0.002),
+        } });
         this.onEvent({ type: "wallet.snapshot", payload: {
           currency: "INR_SIM", label: "simulated INR demonstration", balance_paise: balance,
-          available_paise: balance, reserved_paise: 0, base_wager_paise: 10_000,
-          late_surrender: true,
+          available_paise: balance, reserved_paise: 0, base_wager_paise: wager,
+          max_exposure_paise: wager * 8, late_surrender: true,
           realized_pnl_paise: balance - 1_000_000, roi: (balance - 1_000_000) / 1_000_000,
           max_drawdown_paise: maxDrawdown, risk_of_ruin_heuristic: null,
         } });
-      }, 1700);
+      }, 2600);
     };
-    emit();
-    this.demoTimer = setInterval(emit, 3600);
-  }
-}
 
-function demoPopulations(reward) {
-  return [
-    ["perception", "Card perception", "visual projection neurons", 0.82],
-    ["working", "Current hand", "central complex / recurrent state proxy", 0.68],
-    ["choice", "Action selection", "descending-neuron readout", 0.9],
-    ["learning", "Learning & memory", "Kenyon cells and MBONs", 0.55],
-    ["appetitive", "Appetitive reinforcement", "dopaminergic neuron aggregate", reward > 0 ? 1 : 0.04],
-    ["aversive", "Aversive reinforcement", "negative-valence teaching aggregate", reward < 0 ? 1 : 0.04],
-  ].map(([key, label, technical, activity]) => ({ key, label, technical, activity }));
+    deal();
+    this.demoTimer = setInterval(deal, 5200);
+  }
 }
