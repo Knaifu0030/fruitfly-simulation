@@ -61,7 +61,7 @@ PIN-authenticated owner endpoints:
 | `POST /api/admin/wallet/config` | Sets the next run's base wager and late-surrender rule. Rejected with `409` while a run is active. |
 | `GET /api/admin/wallet/ledger` | Reads the full append-only ledger. |
 
-Adjustments require an `Idempotency-Key` header and are replay-safe: a repeated key returns the original transaction with `created: false`. Removing funds is bookkeeping only — it is recorded as `total_removed_paise` and excluded from realized profit and loss, so ROI is measured against net contributed funds rather than the gross amount ever added.
+Adjustments require an `Idempotency-Key` header and are replay-safe: a repeated key returns the original transaction with `created: false`. Removing funds is bookkeeping only — it is recorded as `total_removed_paise` and excluded from realized profit and loss, so ROI is measured against net contributed funds rather than the gross amount ever added. Adding or removing funding shifts the peak-balance baseline by the same amount, preserving game drawdown instead of manufacturing a gain or loss.
 
 Wallet state and its append-only ledger use Azure Table Storage when `AZURE_STORAGE_ACCOUNT_URL` is configured; local development uses an in-memory store. Neural reinforcement stays in bounded units and is never scaled by the displayed wallet amount.
 

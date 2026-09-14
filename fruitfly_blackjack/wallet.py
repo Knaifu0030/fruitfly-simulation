@@ -218,7 +218,9 @@ class WalletService:
                     state.hands_since_topup = 0
                 else:
                     state.total_removed_paise += amount_paise
-                state.peak_balance_paise = max(state.peak_balance_paise, state.balance_paise)
+                # Funding changes move the performance baseline by the same
+                # amount; they must not create or erase gambling drawdown.
+                state.peak_balance_paise = max(state.balance_paise, state.peak_balance_paise + delta)
                 return {
                     "transaction_id": uuid.uuid4().hex, "kind": f"funding_{direction}", "amount_paise": delta,
                     "balance_after_paise": state.balance_paise, "created_at": now_iso(),

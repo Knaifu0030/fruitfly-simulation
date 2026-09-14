@@ -18,5 +18,8 @@ const staticWebAppConfig = {
 
 export default defineConfig({
   publicDir: "viewer/public",
+  // CSP permits self-hosted font files but intentionally rejects data: fonts.
+  // Keep even small font subsets as emitted assets instead of base64 CSS URLs.
+  build: { assetsInlineLimit: 0 },
   plugins: [staticWebAppConfig],
 });

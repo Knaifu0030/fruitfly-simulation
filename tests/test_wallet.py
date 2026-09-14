@@ -48,6 +48,19 @@ async def test_balance_reduction_is_separate_from_game_profit_and_idempotent():
     assert state.balance_paise == 900_000
     assert state.total_removed_paise == 100_000
     assert state.realized_pnl_paise == 0
+    assert service.public(state)["current_drawdown_paise"] == 0
+
+
+@pytest.mark.asyncio
+async def test_funding_adjustments_preserve_existing_game_drawdown():
+    service = WalletService(MemoryWalletStore())
+    await service.reserve(10_000)
+    state, _ = await service.settle(-1, 10_000, "loss-before-funding")
+    assert service.public(state)["current_drawdown_paise"] == 10_000
+    state, _, _ = await service.adjust("add", 100_000, "add-after-loss")
+    assert service.public(state)["current_drawdown_paise"] == 10_000
+    state, _, _ = await service.adjust("reduce", 50_000, "remove-after-loss")
+    assert service.public(state)["current_drawdown_paise"] == 10_000
 
 
 @pytest.mark.asyncio
