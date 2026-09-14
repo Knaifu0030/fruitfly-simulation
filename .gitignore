@@ -25,6 +25,7 @@ dist/
 # Browser and development artifacts
 .playwright-cli/
 output/
+.runtime/
 *.log
 
 # Editors and operating systems

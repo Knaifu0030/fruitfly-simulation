@@ -1,0 +1,7 @@
+.git
+.venv
+data
+dist
+node_modules
+viewer/public/data
+.runtime

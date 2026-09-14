@@ -1,0 +1,29 @@
+name: Deploy Azure (manual approval)
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_gpu_worker:
+        description: Enable the billable GPU worker after quota and cost review
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    environment: azure-production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Preview resource changes
+        run: az deployment group what-if --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} --template-file infra/main.bicep --parameters namePrefix=${{ vars.AZURE_NAME_PREFIX }} deployGpuWorker=${{ inputs.deploy_gpu_worker }} containerImage=${{ vars.CONTAINER_IMAGE }}
+      - name: Deploy after environment approval
+        run: az deployment group create --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} --template-file infra/main.bicep --parameters namePrefix=${{ vars.AZURE_NAME_PREFIX }} deployGpuWorker=${{ inputs.deploy_gpu_worker }} containerImage=${{ vars.CONTAINER_IMAGE }}

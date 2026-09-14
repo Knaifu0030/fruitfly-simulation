@@ -6,7 +6,8 @@ The repository currently provides:
 
 - a verified downloader for the official MaleCNS v1.0 bulk tables;
 - a bounded-memory pipeline that converts the source graph into compact simulation indices;
-- an interactive Three.js anatomy explorer designed for curious non-scientists;
+- a live Three.js blackjack table and synchronized MaleCNS aggregate activity view;
+- a deterministic six-deck blackjack service, strategy oracle, hybrid learner, replay API, and WebSocket telemetry;
 - reversible links from public-facing labels to scientific neuron annotations;
 - an explicit integration contract for an independently developed 3D world;
 - documentation separating anatomical facts, interpretations, assumptions, and simulation results.
@@ -18,7 +19,7 @@ The repository currently provides:
 
 The processing pipeline selects **165,122 officially traced neurons** and retains **25,563,197 weighted connections** between them. It produces a compact connection table of approximately **125 MiB** from the official 151,856,684-row source graph.
 
-The current explorer renders **140,024 soma locations** and supports functional lenses for learning/reward, sensory input, motor output, descending pathways, ascending pathways, and internal processing. It displays anatomy, not live neural activity yet.
+The live dashboard renders **140,024 soma locations** while the local agent plays independent, bankroll-free blackjack. Anatomy is genuine MaleCNS-derived data; activity values are explicitly labeled model outputs and engineered mappings rather than measurements or subjective feelings.
 
 ## Quick start
 
@@ -63,13 +64,16 @@ uv run python scripts/build-brain-view.py
 uv run python scripts/build-simulation-graph.py
 ```
 
-### Run the explorer
+### Run the live simulation
 
 ```bash
+uv run fruitfly-blackjack-api
 npm run dev
 ```
 
 Open [http://127.0.0.1:5173/](http://127.0.0.1:5173/).
+
+The site uses a clearly marked demonstration stream if the API is offline. Owner-run commands, rules, event schemas, and validation are documented in [Blackjack simulation](docs/BLACKJACK_SIMULATION.md). Azure infrastructure is inert by default and covered by a separate approval gate in [Azure deployment](docs/AZURE_DEPLOYMENT.md).
 
 ## Repository map
 
