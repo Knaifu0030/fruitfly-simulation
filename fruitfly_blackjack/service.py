@@ -115,13 +115,10 @@ app.add_middleware(
 
 def require_owner(
     authorization: str | None = Header(default=None),
-    principal: str | None = Header(default=None, alias="x-ms-client-principal-name"),
 ) -> None:
-    owner = os.getenv("OWNER_EMAIL", "").casefold()
     token = os.getenv("ADMIN_TOKEN", "")
-    valid_principal = bool(owner and principal and principal.casefold() == owner)
     valid_token = bool(token and authorization == f"Bearer {token}")
-    if not (valid_principal or valid_token):
+    if not valid_token:
         raise HTTPException(status_code=403, detail="Owner authentication required")
 
 

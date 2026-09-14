@@ -40,7 +40,7 @@ MaleCNS soma positions are anatomical data. The displayed perception, working-st
 
 ## API
 
-Public: `GET /api/live`, `/api/stats`, `/api/hands/{id}`, `/api/checkpoints`, and `WS /api/stream`. Owner-only: create, inspect, and stop `/api/admin/runs`. Events use `fruitfly-blackjack/1`; sequence numbers let viewers reject duplicates. The current service retains 10,000 hands in memory and writes deterministic checkpoints to `.runtime/checkpoints`.
+Public: `GET /api/live`, `/api/stats`, `/api/hands/{id}`, `/api/checkpoints`, and `WS /api/stream`. Owner-only: create, inspect, and stop `/api/admin/runs` using the Azure-held bearer secret. Direct clients cannot impersonate an Azure identity header. Events use `fruitfly-blackjack/1`; sequence numbers let viewers reject duplicates. The current service retains 10,000 hands in memory and writes deterministic checkpoints to `.runtime/checkpoints`.
 
 ## Validation
 
