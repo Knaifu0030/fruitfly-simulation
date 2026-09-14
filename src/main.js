@@ -9,6 +9,7 @@ const brain = new BrainView($("#brain-canvas"), $("#brain-labels"), $("#activity
 const recent = [];
 const balances = [];
 let currentObservation = null;
+let latestWallet = {};
 
 function cardTotal(cards = []) {
   let total = cards.reduce((sum, card) => sum + card, 0);
@@ -39,6 +40,7 @@ function renderStats(stats = {}) {
 const inr = (paise = 0) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(paise / 100);
 
 function renderWallet(data = {}) {
+  latestWallet = { ...latestWallet, ...data };
   $("#wallet-balance").textContent = inr(data.available_paise ?? data.balance_paise ?? 1_000_000);
   $("#wallet-status").textContent = `${inr(data.reserved_paise ?? 0)} reserved / simulated INR`;
   $("#wallet-wager").textContent = inr(data.base_wager_paise ?? 10_000);
@@ -46,6 +48,7 @@ function renderWallet(data = {}) {
   $("#wallet-roi").textContent = `${((data.roi ?? 0) * 100).toFixed(2)}%`;
   $("#wallet-drawdown").textContent = inr(data.max_drawdown_paise ?? 0);
   $("#wallet-risk").textContent = data.risk_of_ruin_heuristic == null ? "—" : `${(data.risk_of_ruin_heuristic * 100).toFixed(1)}%`;
+  $("#wallet-surrender").textContent = (data.late_surrender ?? true) ? "Enabled" : "Disabled";
   $("#wallet-pnl").className = (data.realized_pnl_paise ?? 0) >= 0 ? "positive" : "negative";
   if (data.balance_paise !== undefined) {
     balances.push(data.balance_paise);
@@ -171,16 +174,35 @@ $("#pin-login").addEventListener("click", async () => {
   try {
     await client.login($("#owner-pin").value);
     $("#pin-step").hidden = true; $("#topup-step").hidden = false;
+    $("#owner-wager").value = (latestWallet.base_wager_paise ?? 10_000) / 100;
+    $("#owner-surrender").checked = latestWallet.late_surrender ?? true;
     message.textContent = "Owner session unlocked. Token remains only in this page's memory."; message.className = "positive";
   } catch (error) { message.textContent = error.message; message.className = "negative"; }
 });
-$("#topup-amount").addEventListener("input", (event) => {
-  $("#topup-confirmation").textContent = `This adds ${inr(Number(event.target.value || 0) * 100)} of non-redeemable play money.`;
-});
+function updateAdjustmentCopy() {
+  const direction = $("#balance-direction").value;
+  const amount = inr(Number($("#topup-amount").value || 0) * 100);
+  const reducing = direction === "reduce";
+  $("#topup-confirmation").textContent = `This ${reducing ? "removes" : "adds"} ${amount} of non-redeemable play money${reducing ? "; game profit/loss is unchanged" : ""}.`;
+  $("#topup-submit").textContent = reducing ? "Confirm balance reduction" : "Confirm balance addition";
+  $("#topup-submit").classList.toggle("destructive", reducing);
+  $("#topup-note").value = reducing ? "Virtual funds removed" : "Virtual funds added";
+}
+$("#topup-amount").addEventListener("input", updateAdjustmentCopy);
+$("#balance-direction").addEventListener("change", updateAdjustmentCopy);
 $("#topup-submit").addEventListener("click", async () => {
   const message = $("#wallet-message");
   try {
-    const result = await client.topup(Math.round(Number($("#topup-amount").value) * 100), $("#topup-note").value);
-    renderWallet(result.wallet); message.textContent = `${inr(result.transaction.amount_paise)} added to the virtual wallet.`; message.className = "positive";
+    const direction = $("#balance-direction").value;
+    const result = await client.adjustWallet(direction, Math.round(Number($("#topup-amount").value) * 100), $("#topup-note").value);
+    renderWallet(result.wallet); message.textContent = `${inr(Math.abs(result.transaction.amount_paise))} ${direction === "add" ? "added to" : "removed from"} the virtual wallet.`; message.className = direction === "add" ? "positive" : "negative";
+  } catch (error) { message.textContent = error.message; message.className = "negative"; }
+});
+$("#settings-submit").addEventListener("click", async () => {
+  const message = $("#wallet-message");
+  try {
+    const wager = Math.round(Number($("#owner-wager").value) * 100);
+    const configured = await client.configureWallet(wager, $("#owner-surrender").checked);
+    renderWallet(configured); message.textContent = `Next run: ${inr(wager)} wager, late surrender ${configured.late_surrender ? "enabled" : "disabled"}.`; message.className = "positive";
   } catch (error) { message.textContent = error.message; message.className = "negative"; }
 });

@@ -39,6 +39,34 @@ async def test_topup_is_idempotent_even_when_retried_concurrently():
 
 
 @pytest.mark.asyncio
+async def test_balance_reduction_is_separate_from_game_profit_and_idempotent():
+    service = WalletService(MemoryWalletStore())
+    first = await service.adjust("reduce", 100_000, "remove-once")
+    second = await service.adjust("reduce", 100_000, "remove-once")
+    state = await service.store.load()
+    assert first[2] is True and second[2] is False
+    assert state.balance_paise == 900_000
+    assert state.total_removed_paise == 100_000
+    assert state.realized_pnl_paise == 0
+
+
+@pytest.mark.asyncio
+async def test_balance_reduction_cannot_touch_reserved_funds():
+    service = WalletService(MemoryWalletStore())
+    await service.reserve(10_000)
+    with pytest.raises(ValueError, match="reduction_exceeds_available_funds"):
+        await service.adjust("reduce", 950_000, "too-much")
+
+
+@pytest.mark.asyncio
+async def test_configure_updates_wager_and_surrender_rule():
+    service = WalletService(MemoryWalletStore())
+    state = await service.configure(25_000, False)
+    assert state.base_wager_paise == 25_000
+    assert state.late_surrender is False
+
+
+@pytest.mark.asyncio
 async def test_drawdown_profit_and_public_payload():
     service = WalletService(MemoryWalletStore())
     await service.reserve(10_000)

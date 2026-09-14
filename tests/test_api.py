@@ -60,3 +60,27 @@ def test_pin_rate_limit(monkeypatch):
     for _ in range(5):
         assert client.post("/api/admin/auth/pin", json={"pin": "wrong"}).status_code == 403
     assert client.post("/api/admin/auth/pin", json={"pin": "wrong"}).status_code == 429
+
+
+def test_owner_can_reduce_balance_and_configure_table(monkeypatch):
+    service.wallet = WalletService(MemoryWalletStore())
+    service.pin_attempts.clear()
+    service.admin_sessions.clear()
+    monkeypatch.setenv("OWNER_PIN_HASH", PasswordHasher().hash("2468"))
+    token = client.post("/api/admin/auth/pin", json={"pin": "2468"}).json()["access_token"]
+    auth = {"Authorization": f"Bearer {token}"}
+    adjusted = client.post(
+        "/api/admin/wallet/adjustments",
+        headers={**auth, "Idempotency-Key": "api-reduce"},
+        json={"direction": "reduce", "amount_paise": 50_000},
+    )
+    assert adjusted.status_code == 200
+    assert adjusted.json()["wallet"]["balance_paise"] == 950_000
+    configured = client.post(
+        "/api/admin/wallet/config",
+        headers=auth,
+        json={"base_wager_paise": 25_000, "late_surrender": False},
+    )
+    assert configured.status_code == 200
+    assert configured.json()["base_wager_paise"] == 25_000
+    assert configured.json()["late_surrender"] is False

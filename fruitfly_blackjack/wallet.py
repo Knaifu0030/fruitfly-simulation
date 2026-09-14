@@ -25,6 +25,8 @@ class WalletState:
     reserved_paise: int = 0
     base_wager_paise: int = DEFAULT_WAGER_PAISE
     total_topups_paise: int = STARTING_BALANCE_PAISE
+    total_removed_paise: int = 0
+    late_surrender: bool = True
     realized_pnl_paise: int = 0
     peak_balance_paise: int = STARTING_BALANCE_PAISE
     max_drawdown_paise: int = 0
@@ -147,7 +149,7 @@ class WalletService:
     def __init__(self, store: WalletStore | None = None) -> None:
         self.store = store or configured_store()
         self.outcomes: list[int] = []
-        self.topup_lock = asyncio.Lock()
+        self.adjustment_lock = asyncio.Lock()
 
     async def mutate(self, operation):
         for _ in range(5):
@@ -197,30 +199,45 @@ class WalletService:
         return state, transaction
 
     async def topup(self, amount_paise: int, key: str, public_note: str = "") -> tuple[WalletState, dict[str, Any], bool]:
-        async with self.topup_lock:
+        return await self.adjust("add", amount_paise, key, public_note)
+
+    async def adjust(self, direction: str, amount_paise: int, key: str, public_note: str = "") -> tuple[WalletState, dict[str, Any], bool]:
+        if direction not in {"add", "reduce"}:
+            raise ValueError("invalid_adjustment")
+        async with self.adjustment_lock:
             existing = await self.store.idempotent(key)
             if existing:
                 return await self.store.load(), existing, False
             def operation(state: WalletState):
-                state.balance_paise += amount_paise
-                state.total_topups_paise += amount_paise
+                delta = amount_paise if direction == "add" else -amount_paise
+                if state.balance_paise + delta < state.reserved_paise:
+                    raise ValueError("reduction_exceeds_available_funds")
+                state.balance_paise += delta
+                if direction == "add":
+                    state.total_topups_paise += amount_paise
+                    state.hands_since_topup = 0
+                else:
+                    state.total_removed_paise += amount_paise
                 state.peak_balance_paise = max(state.peak_balance_paise, state.balance_paise)
-                state.hands_since_topup = 0
                 return {
-                    "transaction_id": uuid.uuid4().hex, "kind": "topup", "amount_paise": amount_paise,
+                    "transaction_id": uuid.uuid4().hex, "kind": f"funding_{direction}", "amount_paise": delta,
                     "balance_after_paise": state.balance_paise, "created_at": now_iso(),
                     "idempotency_key": key, "public_note": public_note[:80],
                 }
             state, transaction = await self.mutate(operation)
             return state, transaction, True
 
-    async def configure(self, wager_paise: int) -> WalletState:
-        state, _ = await self.mutate(lambda item: setattr(item, "base_wager_paise", wager_paise))
+    async def configure(self, wager_paise: int, late_surrender: bool) -> WalletState:
+        def operation(item: WalletState) -> None:
+            item.base_wager_paise = wager_paise
+            item.late_surrender = late_surrender
+        state, _ = await self.mutate(operation)
         return state
 
     def public(self, state: WalletState) -> dict[str, Any]:
         current_drawdown = state.peak_balance_paise - state.balance_paise
-        roi = state.realized_pnl_paise / state.total_topups_paise if state.total_topups_paise else 0
+        net_contributed = max(0, state.total_topups_paise - state.total_removed_paise)
+        roi = state.realized_pnl_paise / net_contributed if net_contributed else 0
         average = state.wagered_paise / state.hands if state.hands else 0
         mean = statistics.fmean(self.outcomes) if self.outcomes else 0
         variance = statistics.pvariance(self.outcomes) if len(self.outcomes) > 1 else state.base_wager_paise**2
@@ -231,6 +248,8 @@ class WalletService:
             "available_paise": bankroll, "reserved_paise": state.reserved_paise,
             "base_wager_paise": state.base_wager_paise, "max_exposure_paise": state.base_wager_paise * MAX_EXPOSURE_UNITS,
             "total_topups_paise": state.total_topups_paise, "realized_pnl_paise": state.realized_pnl_paise,
+            "total_removed_paise": state.total_removed_paise, "net_contributed_paise": net_contributed,
+            "late_surrender": state.late_surrender,
             "roi": roi, "peak_balance_paise": state.peak_balance_paise,
             "current_drawdown_paise": current_drawdown, "max_drawdown_paise": state.max_drawdown_paise,
             "average_wager_paise": round(average), "largest_win_paise": state.largest_win_paise,

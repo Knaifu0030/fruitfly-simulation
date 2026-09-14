@@ -36,7 +36,7 @@
           <section class="wallet-panel" aria-label="Virtual INR wallet">
             <div class="section-title">
               <div><h2>Virtual wallet</h2><p>Simulated INR / no cash value</p></div>
-              <button id="owner-wallet" type="button">Owner top-up</button>
+              <button id="owner-wallet" type="button">Owner controls</button>
             </div>
             <div class="wallet-balance"><span>Available balance</span><strong id="wallet-balance">₹10,000.00</strong><small id="wallet-status">₹0 reserved</small></div>
             <dl class="wallet-metrics">
@@ -45,6 +45,7 @@
               <div><dt>ROI</dt><dd id="wallet-roi">0.00%</dd></div>
               <div><dt>Max drawdown</dt><dd id="wallet-drawdown">₹0</dd></div>
               <div><dt>Ruin risk*</dt><dd id="wallet-risk">—</dd></div>
+              <div><dt>Late surrender</dt><dd id="wallet-surrender">Enabled</dd></div>
             </dl>
             <canvas id="balance-chart" class="balance-chart" aria-label="Virtual balance history"></canvas>
             <p class="risk-note">*Heuristic estimate from observed simulated outcomes, not a prediction or income guarantee.</p>
@@ -101,10 +102,19 @@
             <button id="pin-login" type="button" class="primary-action">Unlock for 15 minutes</button>
           </div>
           <div id="topup-step" hidden>
-            <label>Amount in simulated INR<input id="topup-amount" type="number" min="1" max="10000000" step="1" value="10000" required></label>
-            <label>Public note<input id="topup-note" maxlength="80" value="Virtual funds added"></label>
-            <p id="topup-confirmation">This adds ₹10,000 of non-redeemable play money.</p>
-            <button id="topup-submit" type="button" class="primary-action">Confirm virtual top-up</button>
+            <fieldset class="owner-section"><legend>Balance adjustment</legend>
+              <label>Action<select id="balance-direction"><option value="add">Add virtual funds</option><option value="reduce">Reduce virtual funds</option></select></label>
+              <label>Amount in simulated INR<input id="topup-amount" type="number" min="1" max="10000000" step="1" value="10000" required></label>
+              <label>Public note<input id="topup-note" maxlength="80" value="Virtual funds added"></label>
+              <p id="topup-confirmation">This adds ₹10,000 of non-redeemable play money.</p>
+              <button id="topup-submit" type="button" class="primary-action">Confirm balance addition</button>
+            </fieldset>
+            <fieldset class="owner-section"><legend>Next-run table rules</legend>
+              <label>Base wager in simulated INR<input id="owner-wager" type="number" min="1" max="100000" step="1" value="100" required></label>
+              <label class="toggle-row"><input id="owner-surrender" type="checkbox" checked><span><b>Allow late surrender</b><small>Turn this off for tables where surrender is unavailable.</small></span></label>
+              <p class="control-note">These settings lock when a simulation run begins.</p>
+              <button id="settings-submit" type="button" class="secondary-action">Save table settings</button>
+            </fieldset>
           </div>
           <p id="wallet-message" role="status"></p>
         </form>

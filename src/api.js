@@ -49,14 +49,24 @@ export class LiveClient {
     return result;
   }
 
-  async topup(amountPaise, publicNote) {
+  async adjustWallet(direction, amountPaise, publicNote) {
     if (!this.ownerToken) throw new Error("Owner session expired");
-    const response = await fetch(`${this.api}/api/admin/wallet/topups`, {
+    const response = await fetch(`${this.api}/api/admin/wallet/adjustments`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.ownerToken}`, "Idempotency-Key": crypto.randomUUID() },
-      body: JSON.stringify({ amount_paise: amountPaise, public_note: publicNote }),
+      body: JSON.stringify({ direction, amount_paise: amountPaise, public_note: publicNote }),
     });
-    if (!response.ok) throw new Error((await response.json()).detail ?? "Top-up failed");
+    if (!response.ok) throw new Error((await response.json()).detail ?? "Balance adjustment failed");
+    return response.json();
+  }
+
+  async configureWallet(baseWagerPaise, lateSurrender) {
+    if (!this.ownerToken) throw new Error("Owner session expired");
+    const response = await fetch(`${this.api}/api/admin/wallet/config`, {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.ownerToken}` },
+      body: JSON.stringify({ base_wager_paise: baseWagerPaise, late_surrender: lateSurrender }),
+    });
+    if (!response.ok) throw new Error((await response.json()).detail ?? "Settings update failed");
     return response.json();
   }
 
@@ -116,6 +126,7 @@ export class LiveClient {
         this.onEvent({ type: "wallet.snapshot", payload: {
           currency: "INR_SIM", label: "simulated INR demonstration", balance_paise: balance,
           available_paise: balance, reserved_paise: 0, base_wager_paise: 10_000,
+          late_surrender: true,
           realized_pnl_paise: balance - 1_000_000, roi: (balance - 1_000_000) / 1_000_000,
           max_drawdown_paise: maxDrawdown, risk_of_ruin_heuristic: null,
         } });

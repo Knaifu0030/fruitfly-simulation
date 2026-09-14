@@ -1,6 +1,6 @@
 from fruitfly_blackjack.agent import HybridAgent
 from fruitfly_blackjack.brain import BrainActivityModel
-from fruitfly_blackjack.models import Action, Hand, Observation
+from fruitfly_blackjack.models import Action, Hand, Observation, Rules
 from fruitfly_blackjack.oracle import optimal_action
 from fruitfly_blackjack.provider import LocalBlackjackProvider
 
@@ -49,6 +49,14 @@ def test_surrender_costs_half_unit():
     provider = fixed_provider([10, 6], [10, 7])
     result = provider.act(Action.SURRENDER)
     assert result.total_reward == -0.5
+
+
+def test_surrender_can_be_disabled_by_table_rules():
+    provider = LocalBlackjackProvider(Rules(late_surrender=False))
+    provider.start_session(7)
+    current = provider.start_hand()
+    if isinstance(current, Observation):
+        assert Action.SURRENDER not in current.legal_actions
 
 
 def test_split_aces_receive_one_card_and_stop():

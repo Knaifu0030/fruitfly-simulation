@@ -8,7 +8,7 @@ from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -18,9 +18,9 @@ from pydantic import BaseModel, Field
 
 from .agent import HybridAgent
 from .brain import BrainActivityModel
-from .models import Observation, RoundResult
+from .models import Observation, RoundResult, Rules
 from .provider import LocalBlackjackProvider
-from .wallet import DEFAULT_WAGER_PAISE, WalletService
+from .wallet import WalletService
 
 SCHEMA = "fruitfly-blackjack/1"
 RUNTIME = Path(os.getenv("FRUITFLY_RUNTIME_DIR", ".runtime"))
@@ -32,7 +32,8 @@ class RunRequest(BaseModel):
     seed: int = 20260914
     duration_seconds: int = Field(default=7_200, ge=10, le=7_200)
     speed_hands_per_second: float = Field(default=2.0, gt=0, le=100)
-    base_wager_paise: int = Field(default=DEFAULT_WAGER_PAISE, ge=100, le=10_000_000)
+    base_wager_paise: int | None = Field(default=None, ge=100, le=10_000_000)
+    late_surrender: bool | None = None
 
 
 class PinRequest(BaseModel):
@@ -46,6 +47,13 @@ class TopupRequest(BaseModel):
 
 class WalletConfigRequest(BaseModel):
     base_wager_paise: int = Field(ge=100, le=10_000_000)
+    late_surrender: bool
+
+
+class AdjustmentRequest(BaseModel):
+    direction: Literal["add", "reduce"]
+    amount_paise: int = Field(ge=100, le=1_000_000_000)
+    public_note: str = Field(default="Virtual balance adjusted", max_length=80)
 
 
 @dataclass
@@ -164,7 +172,10 @@ def observation_payload(observation: Observation) -> dict[str, Any]:
 
 
 async def run_simulation(request: RunRequest) -> None:
-    provider = LocalBlackjackProvider()
+    configured = await wallet.store.load()
+    wager_paise = request.base_wager_paise or configured.base_wager_paise
+    late_surrender = configured.late_surrender if request.late_surrender is None else request.late_surrender
+    provider = LocalBlackjackProvider(Rules(late_surrender=late_surrender))
     agent = HybridAgent(request.seed)
     brain = BrainActivityModel()
     provider.start_session(request.seed)
@@ -176,7 +187,7 @@ async def run_simulation(request: RunRequest) -> None:
                 break
             while True:
                 try:
-                    wallet_before, _ = await wallet.reserve(request.base_wager_paise)
+                    wallet_before, _ = await wallet.reserve(wager_paise)
                     if state.paused_reason:
                         state.paused_reason = None
                         await state.bus.publish("run.resumed", {"reason": "virtual_funds_added"})
@@ -224,7 +235,7 @@ async def run_simulation(request: RunRequest) -> None:
                 await state.bus.publish("brain.frame", frame)
                 await asyncio.sleep(0.055)
             wallet_after, wallet_transaction = await wallet.settle(
-                result.total_reward, request.base_wager_paise, result.hand_id
+                result.total_reward, wager_paise, result.hand_id
             )
             update_counters(state.counters, result, decisions)
             hand_record = {
@@ -234,8 +245,9 @@ async def run_simulation(request: RunRequest) -> None:
                 "total_reward": result.total_reward,
                 "decisions": decisions,
                 "sequence": state.bus.sequence,
-                "wager_paise": request.base_wager_paise,
-                "max_exposure_paise": request.base_wager_paise * 8,
+                "wager_paise": wager_paise,
+                "max_exposure_paise": wager_paise * 8,
+                "rules": {"late_surrender": late_surrender},
                 "virtual_inr_result_paise": wallet_transaction["amount_paise"],
                 "balance_before_paise": balance_before,
                 "balance_after_paise": wallet_after.balance_paise,
@@ -313,7 +325,7 @@ async def checkpoints() -> dict[str, Any]:
 @app.get("/api/wallet")
 async def wallet_summary() -> dict[str, Any]:
     current = await wallet.store.load()
-    public_topups = [public_transaction(item) for item in await wallet.store.ledger(20) if item.get("kind") == "topup"]
+    public_topups = [public_transaction(item) for item in await wallet.store.ledger(20) if item.get("kind") in {"topup", "funding_add", "funding_reduce"}]
     return {"schema": SCHEMA, **wallet.public(current), "recent_topups": public_topups[:5]}
 
 
@@ -355,6 +367,22 @@ async def wallet_topup(payload: TopupRequest, idempotency_key: str = Header(alia
     return {"created": created, "transaction": public_transaction(transaction), "wallet": wallet.public(current)}
 
 
+@app.post("/api/admin/wallet/adjustments", dependencies=[Depends(require_wallet_owner)])
+async def wallet_adjustment(payload: AdjustmentRequest, idempotency_key: str = Header(alias="Idempotency-Key")) -> dict[str, Any]:
+    try:
+        current, transaction, created = await wallet.adjust(
+            payload.direction, payload.amount_paise, idempotency_key, payload.public_note
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    if payload.direction == "add":
+        state.funds_available.set()
+    if created:
+        await state.bus.publish("wallet.transaction", public_transaction(transaction))
+        await state.bus.publish("wallet.snapshot", wallet.public(current))
+    return {"created": created, "transaction": public_transaction(transaction), "wallet": wallet.public(current)}
+
+
 @app.get("/api/admin/wallet/ledger", dependencies=[Depends(require_wallet_owner)])
 async def wallet_ledger(limit: int = 100) -> dict[str, Any]:
     return {"transactions": await wallet.store.ledger(max(1, min(limit, 500)))}
@@ -364,7 +392,7 @@ async def wallet_ledger(limit: int = 100) -> dict[str, Any]:
 async def wallet_config(payload: WalletConfigRequest) -> dict[str, Any]:
     if state.running:
         raise HTTPException(status_code=409, detail="Wager is locked during an active run")
-    current = await wallet.configure(payload.base_wager_paise)
+    current = await wallet.configure(payload.base_wager_paise, payload.late_surrender)
     await state.bus.publish("wallet.snapshot", wallet.public(current))
     return wallet.public(current)
 
@@ -386,6 +414,7 @@ async def stop_run(run_id: str) -> dict[str, Any]:
     if run_id != state.run_id or not state.running:
         raise HTTPException(status_code=404, detail="Active run not found")
     state.stop_requested = True
+    state.funds_available.set()
     return {"run_id": run_id, "stop_requested": True}
 
 

@@ -30,7 +30,7 @@ Without the API, the website explicitly reports a demonstration stream.
 
 ## Rules and information boundary
 
-The local provider uses six decks, S17, DAS, late surrender, 3:2 naturals, at most four split hands, one card after split aces, no ace resplitting, and no insurance. The observation contains only player cards, dealer up-card, legal-action mask, cards-dealt count, and previous reward. The dealer hole card and future shoe order never enter the agent observation or public deal event.
+The local provider uses six decks, S17, DAS, 3:2 naturals, at most four split hands, one card after split aces, no ace resplitting, and no insurance. Late surrender is offered by default and can be switched off per run; the resolved value is recorded on every hand as `rules.late_surrender`. The observation contains only player cards, dealer up-card, legal-action mask, cards-dealt count, and previous reward. The dealer hole card and future shoe order never enter the agent observation or public deal event.
 
 Reward is +1 for a win, +1.5 for blackjack, -1 for a loss, 0 for a push, and -0.5 for surrender, multiplied for doubles and clipped to [-2, 2]. Larger visual pulses are presentation only.
 
@@ -44,7 +44,18 @@ Public: `GET /api/live`, `/api/stats`, `/api/hands/{id}`, `/api/checkpoints`, an
 
 ## Virtual wallet
 
-The canonical wallet uses non-redeemable simulated INR stored as integer paise. It starts at ₹10,000 with a ₹100 flat wager and reserves eight wager units before dealing so splits and doubles cannot make the balance negative. Public endpoints expose the wallet summary and shadow wager experiments. PIN-authenticated owner endpoints add virtual funds, read the full ledger, and configure the next run's wager. PIN sessions expire after 15 minutes and remain only in page memory.
+The canonical wallet uses non-redeemable simulated INR stored as integer paise. It starts at ₹10,000 with a ₹100 flat wager and reserves eight wager units before dealing so splits and doubles cannot make the balance negative. Public endpoints expose the wallet summary and shadow wager experiments. PIN sessions expire after 15 minutes and remain only in page memory.
+
+PIN-authenticated owner endpoints:
+
+| Endpoint | Effect |
+| --- | --- |
+| `POST /api/admin/wallet/adjustments` | Adds or removes virtual funds. `direction` is `add` or `reduce`; a reduction that would dip into reserved exposure is rejected with `409 reduction_exceeds_available_funds`. |
+| `POST /api/admin/wallet/topups` | Compatibility alias for an `add` adjustment. |
+| `POST /api/admin/wallet/config` | Sets the next run's base wager and late-surrender rule. Rejected with `409` while a run is active. |
+| `GET /api/admin/wallet/ledger` | Reads the full append-only ledger. |
+
+Adjustments require an `Idempotency-Key` header and are replay-safe: a repeated key returns the original transaction with `created: false`. Removing funds is bookkeeping only — it is recorded as `total_removed_paise` and excluded from realized profit and loss, so ROI is measured against net contributed funds rather than the gross amount ever added.
 
 Wallet state and its append-only ledger use Azure Table Storage when `AZURE_STORAGE_ACCOUNT_URL` is configured; local development uses an in-memory store. Neural reinforcement stays in bounded units and is never scaled by the displayed wallet amount.
 
