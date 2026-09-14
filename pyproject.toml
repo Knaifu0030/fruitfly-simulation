@@ -1,0 +1,22 @@
+[project]
+name = "fruitfly-simulation"
+version = "0.1.0"
+description = "Reproducible MaleCNS connectome preprocessing and interactive anatomy explorer"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+dependencies = [
+  "numpy>=2.3,<3",
+  "pyarrow>=21,<22",
+  "scipy>=1.16,<2",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4,<9",
+  "ruff>=0.12,<1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

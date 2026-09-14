@@ -1,0 +1,35 @@
+# MaleCNS source and generated datasets
+data/malecns-v1.0/raw/
+data/malecns-v1.0/processed/
+viewer/public/data/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.token
+*.secret
+
+# Browser and development artifacts
+.playwright-cli/
+output/
+*.log
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,17 @@
+{
+  "dataset": "MaleCNS",
+  "version": "v1.0",
+  "source_page": "https://male-cns.janelia.org/download/",
+  "license": "CC BY 4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "base_url": "https://storage.googleapis.com/flyem-male-cns/v1.0/connectome-data/flat-connectome",
+  "files": [
+    {"name": "body-annotations-male-cns-v1.0-minconf-0.5.feather", "bytes": 14483314},
+    {"name": "body-neurotransmitters-male-cns-v1.0.feather", "bytes": 43282834},
+    {"name": "body-stats-male-cns-v1.0-minconf-0.5.feather", "bytes": 778062826},
+    {"name": "connectome-weights-male-cns-v1.0-minconf-0.5.feather", "bytes": 1051241946},
+    {"name": "syn-partners-male-cns-v1.0-minconf-0.5.feather", "bytes": 6777179098},
+    {"name": "syn-points-male-cns-v1.0-minconf-0.5.feather", "bytes": 13061489098},
+    {"name": "tbar-neurotransmitters-male-cns-v1.0.feather", "bytes": 2651680218}
+  ]
+}

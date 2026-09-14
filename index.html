@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="An accessible visual explorer for the complete MaleCNS fruit-fly connectome." />
+    <title>MaleCNS Atlas</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="identity">
+          <span class="mark" aria-hidden="true"></span>
+          <div>
+            <h1>MaleCNS Atlas</h1>
+            <p>Complete male fruit-fly central nervous system</p>
+          </div>
+        </div>
+        <div class="status" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="load-status">Loading anatomy…</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="viewport" aria-label="Interactive three-dimensional brain visualization">
+          <canvas id="brain-canvas"></canvas>
+          <div class="orientation" aria-hidden="true">
+            <span>Brain</span>
+            <i></i>
+            <span>Ventral nerve cord</span>
+          </div>
+          <div class="view-tools">
+            <button id="reset-view" type="button">Reset view</button>
+            <button id="motion-toggle" type="button" aria-pressed="true">Drift on</button>
+          </div>
+          <div class="hint">Drag to orbit · scroll to zoom · select a neuron</div>
+        </section>
+
+        <aside class="inspector" aria-label="Brain explorer controls">
+          <section class="introduction">
+            <p class="dataset-label">MaleCNS v1.0 · anatomical data</p>
+            <h2>A nervous system you can read.</h2>
+            <p>Each point is the cell body of one traced neuron. Select a point or filter a functional family to understand what the anatomy can—and cannot—tell us.</p>
+          </section>
+
+          <section class="selection" id="selection" aria-live="polite">
+            <div class="selection-empty">
+              <span class="selection-symbol">◎</span>
+              <div>
+                <h3>No neuron selected</h3>
+                <p>Pick a point in the model to reveal its identity and evidence-backed role.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="legend-section">
+            <div class="section-heading">
+              <h3>Functional lens</h3>
+              <button id="show-all" type="button">Show all</button>
+            </div>
+            <div id="legend" class="legend"></div>
+          </section>
+
+          <details class="method">
+            <summary>What am I looking at?</summary>
+            <p>This view plots soma locations for traced neurons. It is anatomy, not live neural activity yet. “Learning & reward” identifies circuits associated with reinforcement and learned value; it does not establish human-like happiness or subjective experience.</p>
+          </details>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
